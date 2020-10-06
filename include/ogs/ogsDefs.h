@@ -27,10 +27,9 @@ SOFTWARE.
 /* the supported types */
 typedef long long long_long;
 #define OGS_FOR_EACH_TYPE(macro) \
-  macro(double   ) \
   macro(float    ) \
+  macro(double   ) \
   macro(int      ) \
-  macro(long     ) \
   macro(long_long)
 
 /* the supported ops */

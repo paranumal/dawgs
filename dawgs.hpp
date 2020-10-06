@@ -39,7 +39,13 @@ public:
   void report();
 };
 
-void dawgsReference(dfloat* qtest, platform_t &platform, settings_t& settings);
+//Setup a gslib struct
+void *gsSetup(MPI_Comm meshComm,
+              dlong NuniqueBases,
+              hlong *gatherGlobalNodes,
+              int unique, int verbose);
+
+void gsGatherScatter(void* v, void *gsh);
 
 #endif
 

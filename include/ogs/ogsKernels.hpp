@@ -48,21 +48,23 @@ extern int Nrefs;
 
 extern occa::stream dataStream;
 
+typedef struct{
+
+  dlong localId;    // local node id
+  hlong baseId;     // original global index
+
+  dlong newId;         // new global id
+  int sign;
+
+  int rank; //original rank
+  int destRank; //destination rank
+
+}parallelNode_t;
+
+extern MPI_Datatype MPI_PARALLELNODE_T;
+
 void initKernels(platform_t& platform);
-
 void freeKernels();
-
-//Setup a gslib struct
-void *gsSetup(MPI_Comm meshComm,
-              dlong NuniqueBases,
-              hlong *gatherGlobalNodes,
-              int nonsymm, int verbose);
-
-void gsUnique(hlong *gatherGlobalNodes,
-              dlong NuniqueBases,
-              MPI_Comm meshComm);
-
-void gsFree(void* gs);
 
 #define DEFINE_GATHERSCATTER_KERNEL(T,OP) \
   extern occa::kernel gatherScatterKernel_##T##_##OP;
@@ -198,6 +200,6 @@ void hostScatterKernel(const dlong N,
 void gsGatherScatter(void* v, const int Nentries, const int Nvectors,
                      const dlong stride, const ogs_type type, const ogs_op op,
                      const ogs_transpose trans, void * gsh);
-}
+} //namespace ogs
 
 #endif

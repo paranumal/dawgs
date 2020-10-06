@@ -31,38 +31,9 @@ extern "C" {
 #include "gslib.h"
 }
 
-namespace ogs {
-
-OGS_DEFINE_TYPE_SIZES()
-OGS_GS_DEFINE_TYPE_MAP()
-OGS_GS_DEFINE_OP_MAP()
-
 // MPI based gather scatter using libgs
-void gsGatherScatter(void* v,
-                     const dlong Nentries,
-                     const dlong Nvectors,
-                     const dlong stride,
-                     const ogs_type type,
-                     const ogs_op op,
-                     const ogs_transpose trans,
-                     void *gsh){
-
-  const gs_op  gsop  = ogs_gs_op_map[op];
-  const gs_dom gsdom = ogs_gs_type_map[type];
-  const int gstrans  = (trans == ogs_notrans) ? 0 : 1;
-  //call libgs (symmetric behaviour)
-  if (Nentries==1 && Nvectors==1)
-    gs(v, gsdom, gsop, gstrans, (gs_data*)gsh, 0);
-  else if (Nvectors==1)
-    gs_vec(v, Nentries, gsdom, gsop, gstrans, (gs_data*)gsh, 0);
-  else if (Nentries==1) {
-    const size_t Nbytes = ogs_type_size[type];
-    void* V[Nvectors];
-    for (int i=0;i<Nvectors;i++)
-      V[i] = (char*)v + i*stride*Nbytes;
-
-    gs_many(V, Nvectors, gsdom, gsop, gstrans, (gs_data*)gsh, 0);
-  }
+void gsGatherScatter(void* v, void *gsh){
+  gs(v, gs_double, gs_add, 1, (gs_data*)gsh, 0);
 }
 
 //Setup a gslib struct
@@ -128,5 +99,3 @@ void gsUnique(hlong *gatherGlobalNodes,
 void gsFree(void* gs) {
   gs_free((gs_data*)gs);
 }
-
-} //namespace ogs

@@ -157,9 +157,13 @@ int main(int argc, char **argv){
     }
   }
 
-  int verbose = 1;
-  ogs_t* ogs = ogs_t::Setup(Nelements*Np, ids, comm, verbose, platform);
+  ogs_t ogs(platform);
 
+  int verbose = 1;
+  ogs.Setup(Nelements*Np, ids, comm, verbose);
+
+  //make a host gs handle (calls gslib)
+  void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
   free(ids);
 
   /*************************
@@ -169,21 +173,24 @@ int main(int argc, char **argv){
   //make an array
   dfloat *q = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
+  //populate an array with the result we expect
+  dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
+
   //fill with ones
   for (dlong n=0;n<Nelements*Np;n++) q[n]=1.0;
+
+  for (dlong n=0;n<Nelements*Np;n++) qtest[n] = q[n];
 
   //make a device array o_q, copying q from host on creation
   occa::memory o_q = platform.malloc(Nelements*Np*sizeof(dfloat), q);
 
   //call a gatherScatter operation
-  ogs->GatherScatter(o_q, ogs_dfloat, ogs_add, ogs_sym);
+  ogs.GatherScatter(o_q);
 
   //copy back to host
   o_q.copyTo(q);
 
-  //populate an array with the result we expect
-  dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
-  dawgsReference(qtest, platform, settings);
+  gsGatherScatter(qtest, gsHandle);
 
   dfloat err=0.0;
   for (dlong n=0;n<Nelements*Np;n++) err += fabs(q[n]-qtest[n]);

@@ -58,10 +58,35 @@ namespace ogs {
 
 OGS_FOR_EACH_TYPE(DEFINE_KERNELS)
 
+  MPI_Datatype MPI_PARALLELNODE_T;
+
+
 
 void initKernels(platform_t& platform) {
 
   int rank = platform.rank;
+
+  // Make the MPI_PARALLELNODE_T data type
+  parallelNode_t node;
+  MPI_Datatype dtype[6] = {MPI_DLONG, MPI_HLONG,
+                           MPI_DLONG, MPI_INT,
+                           MPI_INT, MPI_INT};
+  int blength[6] = {1, 1, 1, 1, 1, 1};
+  MPI_Aint addr[6], displ[6];
+  MPI_Get_address ( &(node.localId), addr+0);
+  MPI_Get_address ( &(node.baseId), addr+1);
+  MPI_Get_address ( &(node.newId), addr+2);
+  MPI_Get_address ( &(node.sign), addr+3);
+  MPI_Get_address ( &(node.rank), addr+4);
+  MPI_Get_address ( &(node.destRank), addr+5);
+  displ[0] = 0;
+  displ[1] = addr[1] - addr[0];
+  displ[2] = addr[2] - addr[0];
+  displ[3] = addr[3] - addr[0];
+  displ[4] = addr[4] - addr[0];
+  displ[5] = addr[5] - addr[0];
+  MPI_Type_create_struct (6, blength, displ, dtype, &MPI_PARALLELNODE_T);
+  MPI_Type_commit (&MPI_PARALLELNODE_T);
 
   dataStream = platform.device.createStream();
 
@@ -76,8 +101,8 @@ void initKernels(platform_t& platform) {
   kernelInfo["defines/init_" STR(T) "_min"] = (T)  std::numeric_limits<T>::max(); \
   kernelInfo["defines/init_" STR(T) "_max"] = (T) -std::numeric_limits<T>::max();
 
-//OCCA properties don't have an operator+ for long long int, so alias it to int64_t
-typedef int64_t long_long;
+  //OCCA properties don't have an operator+ for long long int, so alias it to int64_t
+  typedef int64_t long_long;
   OGS_FOR_EACH_TYPE(DEFINE_OCCA_ADD_INIT)
 
   kernelInfo["includes"] += LIBP_DIR "/include/ogs/ogsDefs.h";

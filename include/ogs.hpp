@@ -174,51 +174,22 @@ SOFTWARE.
 #include "core.hpp"
 #include "platform.hpp"
 
-//ogs defs
-#include "ogs/ogsDefs.h"
+namespace ogs {
 
 /* type enum */
-#define LIST OGS_FOR_EACH_TYPE(ITEM) ogs_type_n
-#define ITEM(T) ogs_##T,
-typedef enum { LIST } ogs_type;
-#undef ITEM
-#undef LIST
+typedef enum { ogs_float, ogs_double, ogs_int, ogs_long_long, ogs_type_n} ogs_type;
 
 /* operation enum */
-#define LIST OGS_FOR_EACH_OP(T,ITEM) ogs_op_n
-#define ITEM(T,op) ogs_##op,
-typedef enum { LIST } ogs_op;
-#undef ITEM
-#undef LIST
+typedef enum { ogs_add, ogs_mul, ogs_max, ogs_min, ogs_op_n} ogs_op;
 
 /* transpose switch */
 typedef enum { ogs_sym, ogs_notrans, ogs_trans } ogs_transpose;
 
-class ogsData_t {
-public:
-  dlong Nrows=0;
-  dlong nnz=0;
-  dlong NrowBlocks=0;
-
-  dlong *blockRowStarts=nullptr;
-  dlong *rowStarts=nullptr;
-  dlong *colIds=nullptr;
-
-  occa::memory o_blockRowStarts;
-  occa::memory o_rowStarts;
-  occa::memory o_colIds;
-
-  ogsData_t() {};
-
-  ~ogsData_t() {
-    if(blockRowStarts) {free(blockRowStarts); blockRowStarts=nullptr;}
-    if(rowStarts) {free(rowStarts); rowStarts=nullptr;}
-    if(colIds) {free(colIds); colIds=nullptr;}
-    o_blockRowStarts.free();
-    o_rowStarts.free();
-    o_colIds.free();
-  }
-};
+//forward declarations
+class ogsGather_t;
+class ogsScatter_t;
+class ogsGatherScatter_t;
+class ogsExchange_t;
 
 // OCCA+gslib gather scatter
 class ogs_t {
@@ -233,178 +204,42 @@ public:
   dlong         Ngather=0;        //  total number of gather nodes
   hlong         NgatherGlobal=0;  //  global number of gather nodes
 
-  ogsData_t localGather, localScatter;
-  ogsData_t haloGather, haloScatter;
+  ogs_t(platform_t& _platform);
+  ~ogs_t();
 
-  ogsData_t fusedGather, fusedScatter;
-  ogsData_t symGatherScatter;
-
-  void *gsh=nullptr;       // gslib handle
-  void *gshSym=nullptr;    // Symmetrized gslib handle (all ids made positive)
-
-  void* hostBuf=nullptr;
-  size_t hostBufSize=0;
-
-  void* haloBuf=nullptr;
-  occa::memory o_haloBuf;
-  occa::memory h_haloBuf;
-
-  ogs_t(platform_t& _platform, MPI_Comm _comm):
-    platform(_platform), comm(_comm) {};
-
+  void Setup(dlong N, hlong *ids, MPI_Comm comm, int verbose);
   void Free();
-
-  static ogs_t *Setup(dlong N, hlong *ids, MPI_Comm &comm,
-                      int verbose, platform_t& platform);
 
   static void Unique(hlong *ids, dlong _N, MPI_Comm _comm);
 
-  // Host buffer versions
-  void GatherScatter    (void  *v,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterVec (void  *v, const int k,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterMany(void  *v, const int k, const dlong stride,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-
-  void Gather    (void  *gv, void  *v,
-                  const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherVec (void  *gv, void  *v, const int k,
-                  const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherMany(void  *gv, void  *v, const int k,
-                  const dlong gstride, const dlong stride,
-                  const ogs_type type, const ogs_op op, const ogs_transpose trans);
-
-  void Scatter    (void  *v, void  *gv,
-                   const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterVec (void  *v, void  *gv, const int k,
-                   const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterMany(void  *v, void  *gv, const int k,
-                   const dlong stride, const dlong gstride,
-                   const ogs_type type, const ogs_op op, const ogs_transpose trans);
-
   // Synchronous device buffer versions
-  void GatherScatter    (occa::memory&  o_v,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterVec (occa::memory&  o_v, const int k,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterMany(occa::memory&  o_v, const int k,
-                         const dlong stride,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-
-  void Gather    (occa::memory&  o_gv, occa::memory&  o_v,
-                  const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherVec (occa::memory&  o_gv, occa::memory&  o_v, const int k,
-                  const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherMany(occa::memory&  o_gv, occa::memory&  o_v, const int k,
-                  const dlong gstride, const dlong stride,
-                  const ogs_type type, const ogs_op op, const ogs_transpose trans);
-
-  void Scatter    (occa::memory&  o_v, occa::memory&  o_gv,
-                   const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterVec (occa::memory&  o_v, occa::memory&  o_gv, const int k,
-                   const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterMany(occa::memory&  o_v, occa::memory&  o_gv, const int k,
-                   const dlong stride, const dlong gstride,
-                   const ogs_type type, const ogs_op op, const ogs_transpose trans);
+  void GatherScatter    (occa::memory&  o_v){
+    GatherScatterStart (o_v);
+    GatherScatterFinish(o_v);
+  }
 
   // Asynchronous device buffer versions
-  void GatherScatterStart     (occa::memory&  o_v,
-                               const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterFinish    (occa::memory&  o_v,
-                               const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterVecStart  (occa::memory&  o_v, const int k,
-                               const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterVecFinish (occa::memory&  o_v, const int k,
-                               const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterManyStart (occa::memory&  o_v, const int k, const dlong stride,
-                               const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherScatterManyFinish(occa::memory&  o_v, const int k, const dlong stride,
-                               const ogs_type type, const ogs_op op, const ogs_transpose trans);
+  void GatherScatterStart     (occa::memory&  o_v);
+  void GatherScatterFinish    (occa::memory&  o_v);
 
-  void GatherStart     (occa::memory&  o_gv, occa::memory&  o_v,
-                        const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherFinish    (occa::memory&  o_gv, occa::memory&  o_v,
-                        const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherVecStart  (occa::memory&  o_gv, occa::memory&  o_v, const int k,
-                        const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherVecFinish (occa::memory&  o_gv, occa::memory&  o_v, const int k,
-                        const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherManyStart (occa::memory&  o_gv, occa::memory&  o_v, const int k,
-                        const dlong gstride, const dlong stride,
-                        const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void GatherManyFinish(occa::memory&  o_gv, occa::memory&  o_v, const int k,
-                        const dlong gstride, const dlong stride,
-                        const ogs_type type, const ogs_op op, const ogs_transpose trans);
+private:
+  ogsGather_t *gatherLocal=nullptr;
+  ogsScatter_t *scatterLocal=nullptr;
 
-  void ScatterStart     (occa::memory&  o_v, occa::memory&  o_gv,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterFinish    (occa::memory&  o_v, occa::memory&  o_gv,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterVecStart  (occa::memory&  o_v, occa::memory&  o_gv, const int k,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterVecFinish (occa::memory&  o_v, occa::memory&  o_gv, const int k,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterManyStart (occa::memory&  o_v, occa::memory&  o_gv, const int k,
-                         const dlong stride, const dlong gstride,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
-  void ScatterManyFinish(occa::memory&  o_v, occa::memory&  o_gv, const int k,
-                         const dlong stride, const dlong gstride,
-                         const ogs_type type, const ogs_op op, const ogs_transpose trans);
+  ogsGatherScatter_t *gsLocalS=nullptr;
 
-  void reallocHostBuffer(size_t Nbytes);
-  void reallocOccaBuffer(size_t Nbytes);
+  ogsGather_t *gatherHalo=nullptr;
+  ogsScatter_t *scatterHalo=nullptr;
+
+  ogsExchange_t *exchange=nullptr;
+
+  size_t hostBufSize=0;
+  void* hostBuf=nullptr;
+  void* haloBuf=nullptr;
+  occa::memory o_haloBuf;
+  occa::memory h_haloBuf;
 };
 
-// OCCA halo exchange (thin wrapper of an ogs_t object)
-class halo_t {
-public:
-  ogs_t* ogs;
-
-  void Free() { if (ogs) { ogs->Free(); ogs=nullptr; } }
-
-  static halo_t *Setup(dlong N, hlong *ids, MPI_Comm &comm,
-                       int verbose, platform_t& platform) {
-    halo_t *halo = new halo_t();
-    halo->ogs = ogs_t::Setup(N, ids, comm, verbose, platform);
-    return halo;
-  }
-
-  // Synchronous Host buffer version
-  void Exchange(void  *v, const int k, const ogs_type type) {
-    ogs->GatherScatterVec(v, k, type, ogs_add, ogs_notrans);
-  }
-
-  // Synchronous device buffer version
-  void Exchange(occa::memory &o_v, const int k, const ogs_type type) {
-    ogs->GatherScatterVec(o_v, k, type, ogs_add, ogs_notrans);
-  }
-
-  // Asynchronous device buffer version
-  void ExchangeStart (occa::memory &o_v, const int k, const ogs_type type) {
-    ogs->GatherScatterVecStart(o_v, k, type, ogs_add, ogs_notrans);
-  }
-  void ExchangeFinish(occa::memory &o_v, const int k, const ogs_type type) {
-    ogs->GatherScatterVecFinish(o_v, k, type, ogs_add, ogs_notrans);
-  }
-
-  // Synchronous Host buffer version
-  void Combine(void  *v, const int k, const ogs_type type) {
-    ogs->GatherScatterVec(v, k, type, ogs_add, ogs_sym);
-  }
-
-  // Synchronous device buffer version
-  void Combine(occa::memory &o_v, const int k, const ogs_type type) {
-    ogs->GatherScatterVec(o_v, k, type, ogs_add, ogs_sym);
-  }
-
-  // Asynchronous device buffer version
-  void CombineStart (occa::memory &o_v, const int k, const ogs_type type) {
-    ogs->GatherScatterVecStart(o_v, k, type, ogs_add, ogs_sym);
-  }
-  void CombineFinish(occa::memory &o_v, const int k, const ogs_type type) {
-    ogs->GatherScatterVecFinish(o_v, k, type, ogs_add, ogs_sym);
-  }
-};
+} //namespace ogs
 
 #endif
