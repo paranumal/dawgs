@@ -37,16 +37,17 @@ public:
   virtual void Start(occa::memory &o_v)=0;
   virtual void Finish(occa::memory &o_v)=0;
 
-  virtual void reallocHostBuffer(size_t Nbytes)=0;
   virtual void reallocOccaBuffer(size_t Nbytes)=0;
 };
 
 //MPI communcation via single MPI_Alltoallv call
 class ogsAllToAll_t: public ogsExchange_t {
-public:
+private:
   platform_t &platform;
   MPI_Comm comm;
   int rank, size;
+
+  ogsGather_t *prempi=nullptr, *postmpi=nullptr;
 
   ogsGatherScatter_t* sendS=nullptr;
   ogsGatherScatter_t* recvS=nullptr;
@@ -61,13 +62,17 @@ public:
   int *mpiRecvOffsets=nullptr;
 
 public:
-  ogsAllToAll_t(platform_t &_platform):
-    platform(_platform) {}
+  ogsAllToAll_t(dlong recvN,
+               parallelNode_t* recvNodes,
+               dlong NgatherLocal,
+               ogsGather_t *gatherHalo,
+               dlong *indexMap,
+               MPI_Comm _comm,
+               platform_t &_platform);
 
   virtual void Start(occa::memory &o_v);
   virtual void Finish(occa::memory &o_v);
 
-  virtual void reallocHostBuffer(size_t Nbytes);
   virtual void reallocOccaBuffer(size_t Nbytes);
 };
 

@@ -87,6 +87,8 @@ public:
 
   bool is_diag=false;
 
+  void setupRowBlocks(platform_t &platform);
+
   void Free();
 
   void Apply(occa::memory& o_v);

@@ -232,12 +232,6 @@ private:
   ogsScatter_t *scatterHalo=nullptr;
 
   ogsExchange_t *exchange=nullptr;
-
-  size_t hostBufSize=0;
-  void* hostBuf=nullptr;
-  void* haloBuf=nullptr;
-  occa::memory o_haloBuf;
-  occa::memory h_haloBuf;
 };
 
 } //namespace ogs

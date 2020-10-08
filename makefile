@@ -83,7 +83,8 @@ DAWGS_LIBP_LIBS=ogs core
 
 #includes
 INCLUDES=${LIBP_INCLUDES} \
-				 -I.
+					-I${GS_DIR}/src \
+				  -I.
 
 #defines
 DEFINES =${LIBP_DEFINES} \
@@ -109,7 +110,7 @@ SRC =$(wildcard *.cpp)
 
 OBJS=$(SRC:.cpp=.o)
 
-.PHONY: all libp_libs clean clean-libs \
+.PHONY: all libp_libs libgs clean clean-libs \
 		clean-kernels realclean help info silentUpdate
 
 all: dawgsMain
@@ -121,7 +122,15 @@ else
 	@${MAKE} -C ${LIBP_LIBS_DIR} $(DAWGS_LIBP_LIBS) --no-print-directory
 endif
 
-dawgsMain:$(OBJS) | libp_libs silentUpdate
+
+libgs: | libp_libs
+ifneq (,${verbose})
+	${MAKE} -C $(GS_DIR) install verbose=${verbose}
+else
+	@${MAKE} -C $(GS_DIR) install --no-print-directory
+endif
+
+dawgsMain:$(OBJS) libp_libs libgs silentUpdate
 ifneq (,${verbose})
 	$(LIBP_LD) -o dawgsMain $(OBJS) $(MESH_OBJS) $(LFLAGS)
 else
@@ -130,7 +139,7 @@ else
 endif
 
 # rule for .cpp files
-%.o: %.cpp $(DEPS) | libp_libs
+%.o: %.cpp $(DEPS) | libp_libs libgs
 ifneq (,${verbose})
 	$(LIBP_MPICXX) -o $*.o -c $*.cpp $(DAWGS_CXXFLAGS)
 else
@@ -153,7 +162,8 @@ clean-kernels: clean-libs
 	rm -rf ~/.occa/
 
 realclean: clean
-	${MAKE} -C ${LIBP_LIBS_DIR} realclean
+	${MAKE} -C ${LIBP_LIBS_DIR} clean
+	${MAKE} -C ${GS_DIR} clean
 
 help:
 	$(info $(value DAWGS_HELP_MSG))

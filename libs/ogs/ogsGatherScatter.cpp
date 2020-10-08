@@ -47,23 +47,76 @@ void ogs_t::GatherScatterFinish(occa::memory& o_v){
 }
 
 void ogsGatherScatter_t::Apply(occa::memory&  o_v) {
-  gatherScatterKernel_double_add(Nrows,
-                                 gather->o_rowStarts,
-                                 gather->o_colIds,
-                                 scatter->o_rowStarts,
-                                 scatter->o_colIds,
-                                 o_v,
-                                 o_v);
+  if (NrowBlocks)
+    gatherScatterKernel_double_add(NrowBlocks,
+                                   o_blockRowStarts,
+                                   gather->o_rowStarts,
+                                   gather->o_colIds,
+                                   scatter->o_rowStarts,
+                                   scatter->o_colIds,
+                                   o_v,
+                                   o_v);
 }
 
 void ogsGatherScatter_t::Apply(occa::memory&  o_v, occa::memory&  o_w) {
-  gatherScatterKernel_double_add(Nrows,
-                                 gather->o_rowStarts,
-                                 gather->o_colIds,
-                                 scatter->o_rowStarts,
-                                 scatter->o_colIds,
-                                 o_v,
-                                 o_w);
+  if (NrowBlocks)
+    gatherScatterKernel_double_add(NrowBlocks,
+                                   o_blockRowStarts,
+                                   gather->o_rowStarts,
+                                   gather->o_colIds,
+                                   scatter->o_rowStarts,
+                                   scatter->o_colIds,
+                                   o_v,
+                                   o_w);
+}
+
+void ogsGatherScatter_t::setupRowBlocks(platform_t &platform) {
+
+  dlong blockSum=0;
+  NrowBlocks=0;
+  if (Nrows) NrowBlocks++;
+  for (dlong i=0;i<Nrows;i++) {
+    const dlong gatherRowSize  = gather->rowStarts[i+1] -gather->rowStarts[i];
+    const dlong scatterRowSize = scatter->rowStarts[i+1]-scatter->rowStarts[i];
+
+    const dlong rowSize = (gatherRowSize>scatterRowSize) ? gatherRowSize : scatterRowSize;
+
+    if (rowSize > ogs::gatherNodesPerBlock) {
+      //this row is pathalogically big. We can't currently run this
+      stringstream ss;
+      ss << "Multiplicity of global node id: " << i << "in ogsGatherScatter_t::setupRowBlocks is too large.";
+      LIBP_ABORT(ss.str())
+    }
+
+    if (blockSum+rowSize > ogs::gatherNodesPerBlock) { //adding this row will exceed the nnz per block
+      NrowBlocks++; //count the previous block
+      blockSum=rowSize; //start a new row block
+    } else {
+      blockSum+=rowSize; //add this row to the block
+    }
+  }
+
+  blockRowStarts  = (dlong*) calloc(NrowBlocks+1,sizeof(dlong));
+
+  blockSum=0;
+  NrowBlocks=0;
+  if (Nrows) NrowBlocks++;
+  for (dlong i=0;i<Nrows;i++) {
+    const dlong gatherRowSize  = gather->rowStarts[i+1] -gather->rowStarts[i];
+    const dlong scatterRowSize = scatter->rowStarts[i+1]-scatter->rowStarts[i];
+
+    const dlong rowSize = (gatherRowSize>scatterRowSize) ? gatherRowSize : scatterRowSize;
+
+    if (blockSum+rowSize > ogs::gatherNodesPerBlock) { //adding this row will exceed the nnz per block
+      blockRowStarts[NrowBlocks++] = i; //mark the previous block
+      blockSum=rowSize; //start a new row block
+    } else {
+      blockSum+=rowSize; //add this row to the block
+    }
+  }
+  blockRowStarts[NrowBlocks] = Nrows;
+
+  o_blockRowStarts = platform.malloc((NrowBlocks+1)*sizeof(dlong), blockRowStarts);
 }
 
 } //namespace ogs

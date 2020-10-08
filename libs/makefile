@@ -102,7 +102,7 @@ LIBOGS_SRC =$(wildcard ogs/*.cpp)
 LIBCORE_OBJS=$(LIBCORE_SRC:.cpp=.o)
 LIBOGS_OBJS=$(LIBOGS_SRC:.cpp=.o)
 
-.PHONY: all core ogs clean realclean silentUpdate-core silentUpdate-ogs
+.PHONY: all core ogs clean silentUpdate-core silentUpdate-ogs
 
 all: core ogs
 
@@ -117,14 +117,7 @@ else
 	@ar -cr libcore.a $(LIBCORE_OBJS)
 endif
 
-libgs: | libcore.a
-ifneq (,${verbose})
-	${MAKE} -C $(GS_DIR) install verbose=${verbose}
-else
-	@${MAKE} -C $(GS_DIR) install --no-print-directory
-endif
-
-libogs.a: $(LIBOGS_OBJS) | libgs
+libogs.a: $(LIBOGS_OBJS) | libcore.a
 ifneq (,${verbose})
 	ar -cr libogs.a $(LIBOGS_OBJS)
 else
@@ -147,12 +140,12 @@ else
 	@$(LIBP_MPICXX) -o $@ -c $< ${LIBCORE_DEFINES} $(LIB_CXXFLAGS)
 endif
 
-ogs/%.o: ogs/%.cpp $(LIBOGS_DEPS) | libgs
+ogs/%.o: ogs/%.cpp $(LIBOGS_DEPS) | libcore.a
 ifneq (,${verbose})
-	$(LIBP_MPICXX) -o $@ -c $< ${LIBOGS_DEFINES} -I${GS_DIR}/src $(LIB_CXXFLAGS)
+	$(LIBP_MPICXX) -o $@ -c $< ${LIBOGS_DEFINES} $(LIB_CXXFLAGS)
 else
 	@printf "%b" "$(OBJ_COLOR)Compiling $(@F)$(NO_COLOR)\n";
-	@$(LIBP_MPICXX) -o $@ -c $< ${LIBOGS_DEFINES} -I${GS_DIR}/src $(LIB_CXXFLAGS)
+	@$(LIBP_MPICXX) -o $@ -c $< ${LIBOGS_DEFINES} $(LIB_CXXFLAGS)
 endif
 
 #cleanup
@@ -162,9 +155,6 @@ clean:
 clean-kernels: clean
 #   $(shell ${OCCA_DIR}/bin/occa clear all -y)
 	rm -rf ~/.occa/
-
-realclean: clean
-	${MAKE} -C ${GS_DIR} clean
 
 help:
 	$(info $(value LIB_HELP_MSG))

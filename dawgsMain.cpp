@@ -157,7 +157,7 @@ int main(int argc, char **argv){
     }
   }
 
-  ogs_t ogs(platform);
+  ogs::ogs_t ogs(platform);
 
   int verbose = 1;
   ogs.Setup(Nelements*Np, ids, comm, verbose);
