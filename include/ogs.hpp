@@ -199,6 +199,8 @@ public:
   platform_t& platform;
   MPI_Comm comm;
 
+  bool gpu_aware;
+
   dlong         N=0;
   dlong         Nlocal=0;         //  number of local nodes
   dlong         Nhalo=0;          //  number of halo nodes
@@ -209,7 +211,7 @@ public:
   ogs_t(platform_t& _platform);
   ~ogs_t();
 
-  void Setup(dlong N, hlong *ids, MPI_Comm comm, int verbose);
+  void Setup(dlong N, hlong *ids, MPI_Comm comm, int verbose, bool gpu_aware);
   void Free();
 
   static void Unique(hlong *ids, dlong _N, MPI_Comm _comm);

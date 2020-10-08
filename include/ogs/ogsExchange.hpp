@@ -34,8 +34,8 @@ namespace ogs {
 //virtual base class to perform MPI exchange of gatherScatter
 class ogsExchange_t {
 public:
-  virtual void Start(occa::memory &o_v)=0;
-  virtual void Finish(occa::memory &o_v)=0;
+  virtual void Start(occa::memory &o_v, bool ga)=0;
+  virtual void Finish(occa::memory &o_v, bool ga)=0;
 
   virtual void reallocOccaBuffer(size_t Nbytes)=0;
 };
@@ -46,7 +46,7 @@ private:
   platform_t &platform;
   MPI_Comm comm;
   int rank, size;
-
+  
   ogsGather_t *prempi=nullptr, *postmpi=nullptr;
 
   ogsGatherScatter_t* sendS=nullptr;
@@ -70,10 +70,11 @@ public:
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(occa::memory &o_v);
-  virtual void Finish(occa::memory &o_v);
+  virtual void Start(occa::memory &o_v, bool ga);
+  virtual void Finish(occa::memory &o_v, bool ga);
 
   virtual void reallocOccaBuffer(size_t Nbytes);
+  
 };
 
 //MPI communcation via pairwise send/recvs
@@ -111,8 +112,8 @@ public:
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(occa::memory &o_v);
-  virtual void Finish(occa::memory &o_v);
+  virtual void Start(occa::memory &o_v, bool ga);
+  virtual void Finish(occa::memory &o_v, bool ga);
 
   virtual void reallocOccaBuffer(size_t Nbytes);
 };

@@ -33,7 +33,7 @@ namespace ogs {
 
 void ogs_t::GatherScatterStart(occa::memory& o_v){
   //prepare MPI exchange
-  exchange->Start(o_v);
+  exchange->Start(o_v, gpu_aware);
 }
 
 
@@ -43,7 +43,7 @@ void ogs_t::GatherScatterFinish(occa::memory& o_v){
   gsLocalS->Apply(o_v);
 
   //finish MPI exchange
-  exchange->Finish(o_v);
+  exchange->Finish(o_v, gpu_aware);
 }
 
 void ogsGatherScatter_t::Apply(occa::memory&  o_v) {

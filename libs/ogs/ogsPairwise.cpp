@@ -31,7 +31,7 @@ SOFTWARE.
 
 namespace ogs {
 
-void ogsPairwise_t::Start(occa::memory& o_v){
+void ogsPairwise_t::Start(occa::memory& o_v, bool gpu_aware){
 
   const size_t Nbytes = sizeof(dfloat);
   reallocOccaBuffer(Nbytes);
@@ -39,6 +39,8 @@ void ogsPairwise_t::Start(occa::memory& o_v){
   // assemble mpi send buffer by gathering halo nodes and scattering
   // them into the send buffer
   sendS->Apply(o_v, o_sendBuf);
+
+  std::cout << "gpu aware pairwise start = " << gpu_aware << std::endl;
 
   dlong Nsend = sendOffsets[NranksSend];
   if (Nsend) {
@@ -58,10 +60,12 @@ void ogsPairwise_t::Start(occa::memory& o_v){
 }
 
 
-void ogsPairwise_t::Finish(occa::memory& o_v){
+void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware){
 
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
+
+  std::cout << "gpu aware pairwise finish = " << gpu_aware << std::endl;
 
   dlong Nsend = sendOffsets[NranksSend];
   if (Nsend) {

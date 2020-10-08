@@ -31,7 +31,7 @@ SOFTWARE.
 
 namespace ogs {
 
-void ogsAllToAll_t::Start(occa::memory& o_v){
+void ogsAllToAll_t::Start(occa::memory& o_v, bool gpu_aware){
 
   const size_t Nbytes = sizeof(dfloat);
   reallocOccaBuffer(Nbytes);
@@ -39,6 +39,10 @@ void ogsAllToAll_t::Start(occa::memory& o_v){
   // assemble mpi send buffer by gathering halo nodes and scattering
   // them into the send buffer
   sendS->Apply(o_v, o_sendBuf);
+
+  //ogs::ogs_t ogs(platform);
+
+  std::cout << "gpu aware all to all start = "<< gpu_aware << std::endl;
 
   dlong Nsend = mpiSendOffsets[size];
   if (Nsend) {
@@ -58,10 +62,12 @@ void ogsAllToAll_t::Start(occa::memory& o_v){
 }
 
 
-void ogsAllToAll_t::Finish(occa::memory& o_v){
+void ogsAllToAll_t::Finish(occa::memory& o_v, bool gpu_aware){
 
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
+
+  std::cout << "gpu aware all to all finish = "<< gpu_aware << std::endl;
 
   dlong Nsend = mpiRecvOffsets[size];
   if (Nsend) {

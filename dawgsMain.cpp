@@ -100,16 +100,16 @@ int main(int argc, char **argv){
   factor3(size, size_x, size_y, size_z);
 
   //parse GPU-aware setting from cmd line
-  bool GA;
-  GA = settings.compareSetting("GPU AWARE", "TRUE");
-  
+  bool gpu_aware;
+  gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
+
   //global MPI rank
   int rank = platform.rank;
 
   if (rank==0) {
     std::cout << "Name:     [GPU AWARE]" << std::endl;
     std::cout << "CL keys:  [-ga, --gpu-aware]" << std::endl;
-    if (GA)
+    if (gpu_aware)
       std::cout << "Value:    TRUE" << std::endl << std::endl;
     else
       std::cout << "Value:    FALSE" << std::endl << std::endl;
@@ -180,7 +180,7 @@ int main(int argc, char **argv){
   ogs::ogs_t ogs(platform);
 
   int verbose = 1;
-  ogs.Setup(Nelements*Np, ids, comm, verbose);
+  ogs.Setup(Nelements*Np, ids, comm, verbose, gpu_aware);
 
   //make a host gs handle (calls gslib)
   void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
