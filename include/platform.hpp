@@ -78,8 +78,10 @@ public:
                    occa::memory &h_mem){
     occa::properties prop;
     prop["mapped"] = true;
-    h_mem = device.malloc(bytes, prop);
-    return h_mem.ptr(prop);
+    // h_mem = device.malloc(bytes, prop);
+    // return h_mem.ptr(prop);
+    h_mem = device.malloc(bytes);
+    return h_mem.ptr();
   }
 
 private:
