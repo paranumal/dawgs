@@ -74,6 +74,14 @@ int main(int argc, char **argv){
 
   //parse run settings from cmd line
   dawgsSettings_t settings(argc, argv, comm);
+
+  if (settings.compareSetting("GPU AWARE", "TRUE")
+    &&(settings.compareSetting("THREAD MODEL","HIP"))) {
+      settings.changeSetting("GPU AWARE", "TRUE");
+    } else {
+      settings.changeSetting("GPU AWARE", "FALSE");
+    }
+  
   if (settings.compareSetting("VERBOSE", "TRUE"))
     settings.report();
 
@@ -91,13 +99,25 @@ int main(int argc, char **argv){
   int size_x, size_y, size_z;
   factor3(size, size_x, size_y, size_z);
 
+  //parse GPU-aware setting from cmd line
+  bool GA;
+  GA = settings.compareSetting("GPU AWARE", "TRUE");
+  
   //global MPI rank
   int rank = platform.rank;
 
-  if (rank==0)
+  if (rank==0) {
+    std::cout << "Name:     [GPU AWARE]" << std::endl;
+    std::cout << "CL keys:  [-ga, --gpu-aware]" << std::endl;
+    if (GA)
+      std::cout << "Value:    TRUE" << std::endl << std::endl;
+    else
+      std::cout << "Value:    FALSE" << std::endl << std::endl;
+    
     std::cout << "MPI grid configuration: " << size_x << " x "
                                             << size_y << " x "
                                             << size_z << std::endl;
+  }
 
   //find our coordinates in the MPI grid such that
   // rank = rank_x + rank_y*size_x + rank_z*size_x*size_y

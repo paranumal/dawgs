@@ -71,6 +71,12 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
              "Enable verbose output",
              {"TRUE", "FALSE"});
 
+  newSetting("-ga", "--gpu-aware",
+             "GPU AWARE",
+             "FALSE",
+             "Enable GPU aware",
+             {"TRUE", "FALSE"});
+
   parseSettings(argc, argv);
 }
 
