@@ -76,6 +76,47 @@ public:
   virtual void reallocOccaBuffer(size_t Nbytes);
 };
 
+//MPI communcation via pairwise send/recvs
+class ogsPairwise_t: public ogsExchange_t {
+private:
+  platform_t &platform;
+  MPI_Comm comm;
+  int rank, size;
+
+  ogsGather_t *prempi=nullptr, *postmpi=nullptr;
+
+  ogsGatherScatter_t* sendS=nullptr;
+  ogsGatherScatter_t* recvS=nullptr;
+
+  void *sendBuf=nullptr, *recvBuf=nullptr;
+  occa::memory o_sendBuf, o_recvBuf;
+  occa::memory h_sendBuf, h_recvBuf;
+
+  int NranksSend=0, NranksRecv=0;
+  int *sendRanks =nullptr;
+  int *recvRanks =nullptr;
+  int *sendCounts =nullptr;
+  int *recvCounts =nullptr;
+  int *sendOffsets=nullptr;
+  int *recvOffsets=nullptr;
+  MPI_Request* requests;
+  MPI_Status* statuses;
+
+public:
+  ogsPairwise_t(dlong recvN,
+               parallelNode_t* recvNodes,
+               dlong NgatherLocal,
+               ogsGather_t *gatherHalo,
+               dlong *indexMap,
+               MPI_Comm _comm,
+               platform_t &_platform);
+
+  virtual void Start(occa::memory &o_v);
+  virtual void Finish(occa::memory &o_v);
+
+  virtual void reallocOccaBuffer(size_t Nbytes);
+};
+
 } //namespace ogs
 
 #endif

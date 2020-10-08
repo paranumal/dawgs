@@ -348,6 +348,55 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
 
   // We now know which of our local list of nodes are halo nodes
 
+  // When sorted by baseId, we numbered the baseId groups with a new index,
+  // newId. We use this index to reorder the baseId groups based on
+  // the order we encouter them in their original ordering.
+  dlong *indexMap = (dlong*) malloc(NbaseIds*sizeof(dlong));
+
+  LocalSetup(Nids, nodes, NbaseIds, indexMap);
+
+  //with that, we're done with the local nodes list
+  free(nodes);
+
+  //make gatherScatter operator
+  gsLocalS = new ogsGatherScatter_t();
+  gsLocalS->Nrows = gatherLocal->Nrows;
+  gsLocalS->gather  = gatherLocal;
+  gsLocalS->scatter = gatherLocal;
+
+  //divide the list of colIds into roughly equal sized blocks so that each
+  // threadblock loads approximately an equal amount of data
+  gsLocalS->setupRowBlocks(platform);
+
+  Nlocal = gatherLocal->Nrows;
+  Nhalo = gatherHalo->Nrows;
+
+  //total number of owned gathered nodes
+  Ngather = Nlocal+Nhalo;
+
+  hlong NgatherLocal = (hlong) Ngather;
+  MPI_Allreduce(&NgatherLocal, &(NgatherGlobal), 1, MPI_HLONG, MPI_SUM, comm);
+
+  // At this point, we've setup gs operators to gather/scatter the purely local nodes,
+  // and gather/scatter the shared halo nodes to/from a coalesced ordering. We now
+  // need gs operators to scatter/gather the coalesced halo nodes to/from the expected
+  // orderings for MPI communications.
+
+  //TODO make this a option
+  // exchange = new ogsAllToAll_t(recvN, recvNodes, Nlocal,
+  //                              gatherHalo, indexMap, comm, platform);
+
+  exchange = new ogsPairwise_t(recvN, recvNodes, Nlocal,
+                               gatherHalo, indexMap, comm, platform);
+
+  //we're now done with the recvNodes list
+  free(recvNodes);
+  free(indexMap);
+}
+
+//Make local and halo gahter operators using nodes list
+void ogs_t::LocalSetup(const dlong Nids, parallelNode_t* nodes,
+                       const dlong NbaseIds, dlong *indexMap){
   //count some things
   //gatherLocal->Nrows counts the number of global ids local to
   // this rank
@@ -374,10 +423,6 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   // sort the list back to local id ordering
   qsort(nodes, Nids, sizeof(parallelNode_t), compareLocalId);
 
-  // When sorted by baseId, we numbered the baseId groups with a new index,
-  // newId. We use this index to reorder the baseId groups based on
-  // the order we encouter them in their original ordering.
-  dlong *indexMap = (dlong*) malloc(NbaseIds*sizeof(dlong));
   for (dlong i=0;i<NbaseIds;i++) indexMap[i] = -1; //initialize map
 
   //tally up how many nodes are being gathered to each gatherNode and
@@ -447,45 +492,13 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
     }
   }
   free(localGatherCounts);
-
-  //with that, we're done with the local nodes list
-  free(nodes);
+  free(haloGatherCounts);
 
   gatherLocal->o_rowStarts = platform.malloc((gatherLocal->Nrows+1)*sizeof(dlong), gatherLocal->rowStarts);
   gatherLocal->o_colIds = platform.malloc((gatherLocal->nnz+1)*sizeof(dlong), gatherLocal->colIds);
 
   gatherHalo->o_rowStarts = platform.malloc((gatherHalo->Nrows+1)*sizeof(dlong), gatherHalo->rowStarts);
   gatherHalo->o_colIds = platform.malloc((gatherHalo->nnz+1)*sizeof(dlong), gatherHalo->colIds);
-
-  //make gatherScatter operator
-  gsLocalS = new ogsGatherScatter_t();
-  gsLocalS->Nrows = gatherLocal->Nrows;
-  gsLocalS->gather  = gatherLocal;
-  gsLocalS->scatter = gatherLocal;
-
-  //divide the list of colIds into roughly equal sized blocks so that each
-  // threadblock loads approximately an equal amount of data
-  gsLocalS->setupRowBlocks(platform);
-
-  Nlocal = gatherLocal->Nrows;
-  Nhalo = gatherHalo->Nrows;
-
-  //total number of owned gathered nodes
-  Ngather = Nlocal+Nhalo;
-
-  hlong NgatherLocal = (hlong) Ngather;
-  MPI_Allreduce(&NgatherLocal, &(NgatherGlobal), 1, MPI_HLONG, MPI_SUM, comm);
-
-  // At this point, we've setup gs operators to gather/scatter the purely local nodes,
-  // and gather/scatter the shared halo nodes to/from a coalesced ordering. We now
-  // need gs operators to scatter/gather the coalesced halo nodes to/from the expected
-  // orderings for MPI communications.
-  exchange = new ogsAllToAll_t(recvN, recvNodes, Nlocal,
-                               gatherHalo, indexMap, comm, platform);
-
-  //we're now done with the recvNodes list
-  free(recvNodes);
-  free(indexMap);
 }
 
 ogs_t::ogs_t(platform_t& _platform): platform(_platform) {

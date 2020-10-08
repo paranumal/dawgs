@@ -191,6 +191,8 @@ class ogsScatter_t;
 class ogsGatherScatter_t;
 class ogsExchange_t;
 
+struct parallelNode_t;
+
 // OCCA+gslib gather scatter
 class ogs_t {
 public:
@@ -232,6 +234,9 @@ private:
   ogsScatter_t *scatterHalo=nullptr;
 
   ogsExchange_t *exchange=nullptr;
+
+  void LocalSetup(const dlong Nids, parallelNode_t* nodes,
+                  const dlong NbaseIds, dlong *indexMap);
 };
 
 } //namespace ogs

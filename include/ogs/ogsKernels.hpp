@@ -48,7 +48,7 @@ extern int Nrefs;
 
 extern occa::stream dataStream;
 
-typedef struct{
+struct parallelNode_t{
 
   dlong localId;    // local node id
   hlong baseId;     // original global index
@@ -59,7 +59,7 @@ typedef struct{
   int rank; //original rank
   int destRank; //destination rank
 
-}parallelNode_t;
+};
 
 extern MPI_Datatype MPI_PARALLELNODE_T;
 
@@ -87,119 +87,6 @@ OGS_FOR_EACH_TYPE(DEFINE_KERNELS)
 #undef DEFINE_SCATTER_KERNEL
 #undef DEFINE_KERNELS
 
-void occaGatherScatterStart(occa::memory& o_v,
-                            const int Nentries, const int Nvectors, const dlong stride,
-                            const ogs_type type, const ogs_op op,
-                            const ogs_transpose trans, ogs_t &ogs);
-void occaGatherScatterFinish(occa::memory& o_v,
-                            const int Nentries, const int Nvectors, const dlong stride,
-                            const ogs_type type, const ogs_op op,
-                            const ogs_transpose trans, ogs_t &ogs);
-
-void occaGatherStart(occa::memory& o_gv, occa::memory& o_v,
-                     const int Nentries, const int Nvectors,
-                     const dlong gstride, const dlong stride,
-                     const ogs_type type, const ogs_op op,
-                     const ogs_transpose trans, ogs_t &ogs);
-void occaGatherFinish(occa::memory& o_gv, occa::memory& o_v,
-                     const int Nentries, const int Nvectors,
-                     const dlong gstride, const dlong stride,
-                     const ogs_type type, const ogs_op op,
-                     const ogs_transpose trans, ogs_t &ogs);
-
-void occaScatterStart(occa::memory& o_v, occa::memory& o_gv,
-                      const int Nentries, const int Nvectors,
-                      const dlong stride, const dlong gstride,
-                      const ogs_type type, const ogs_op op,
-                      const ogs_transpose trans, ogs_t &ogs);
-void occaScatterFinish(occa::memory& o_v, occa::memory& o_gv,
-                      const int Nentries, const int Nvectors,
-                      const dlong stride, const dlong gstride,
-                      const ogs_type type, const ogs_op op,
-                      const ogs_transpose trans, ogs_t &ogs);
-
-void hostGatherScatter(void* v, const int Nentries, const int Nvectors,
-                       const dlong stride, const ogs_type type,
-                       const ogs_op op, const ogs_transpose trans, ogs_t &ogs);
-
-void hostGather(void* gv, void* v, const int Nentries, const int Nvectors,
-                const dlong gstride, const dlong stride,
-                const ogs_type type, const ogs_op op,
-                const ogs_transpose trans, ogs_t &ogs);
-
-void hostScatter(void* v, void* gv, const int Nentries, const int Nvectors,
-                 const dlong stride, const dlong gstride,
-                 const ogs_type type, const ogs_op op,
-                 const ogs_transpose trans, ogs_t &ogs);
-
-void occaGatherScatterKernel(const ogsData_t &gather,
-                             const ogsData_t &scatter,
-                             const int Nentries,
-                             const int Nvectors,
-                             const dlong stride,
-                             const ogs_type type,
-                             const ogs_op op,
-                             occa::memory&  o_v);
-
-void occaGatherKernel(const ogsData_t &gather,
-                      const int Nentries,
-                      const int Nvectors,
-                      const dlong stride,
-                      const dlong gtride,
-                      const ogs_type type,
-                      const ogs_op op,
-                      occa::memory& o_v,
-                      occa::memory& o_gv);
-
-void occaScatterKernel(const ogsData_t &gather,
-                       const int Nentries,
-                       const int Nvectors,
-                       const dlong gtride,
-                       const dlong stride,
-                       const ogs_type type,
-                       const ogs_op op,
-                       occa::memory& o_gv,
-                       occa::memory& o_v);
-
-void hostGatherScatterKernel(const dlong N,
-                             const int Nentries,
-                             const int Nvectors,
-                             const dlong stride,
-                             dlong* gatherStarts,
-                             dlong* gatherIds,
-                             dlong* scatterStarts,
-                             dlong* scatterIds,
-                             const ogs_type type,
-                             const ogs_op op,
-                             void* v);
-
-void hostGatherKernel(const dlong N,
-                      const int Nentries,
-                      const int Nvectors,
-                      const dlong stride,
-                      const dlong gstride,
-                      const dlong *gatherStarts,
-                      const dlong *gatherIds,
-                      const ogs_type type,
-                      const ogs_op op,
-                      const void *v,
-                      void *gv);
-
-void hostScatterKernel(const dlong N,
-                       const int Nentries,
-                       const int Nvectors,
-                       const dlong gstride,
-                       const dlong stride,
-                       const dlong *scatterStarts,
-                       const dlong *scatterIds,
-                       const ogs_type type,
-                       const ogs_op op,
-                       const void *gv,
-                       void *v);
-
-void gsGatherScatter(void* v, const int Nentries, const int Nvectors,
-                     const dlong stride, const ogs_type type, const ogs_op op,
-                     const ogs_transpose trans, void * gsh);
 } //namespace ogs
 
 #endif
