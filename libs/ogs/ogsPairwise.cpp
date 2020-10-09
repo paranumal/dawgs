@@ -40,8 +40,6 @@ void ogsPairwise_t::Start(occa::memory& o_v, bool gpu_aware){
   // them into the send buffer
   sendS->Apply(o_v, o_sendBuf);
 
-  std::cout << "gpu aware pairwise start = " << gpu_aware << std::endl;
-
   dlong Nsend = sendOffsets[NranksSend];
   if (Nsend) {
     occa::device &device = platform.device;
@@ -49,13 +47,15 @@ void ogsPairwise_t::Start(occa::memory& o_v, bool gpu_aware){
     //wait for previous kernel to finish
     device.finish();
 
-    //switch streams to overlap data movement
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
+    if (!gpu_aware) {
+      //switch streams to overlap data movement
+      occa::stream currentStream = device.getStream();
+      device.setStream(dataStream);
 
-    o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
+      o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
 
-    device.setStream(currentStream);
+      device.setStream(currentStream);
+    }
   }
 }
 
@@ -65,8 +65,6 @@ void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware){
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
 
-  std::cout << "gpu aware pairwise finish = " << gpu_aware << std::endl;
-
   dlong Nsend = sendOffsets[NranksSend];
   if (Nsend) {
     //synchronize data stream to ensure the send buffer has arrived on host
@@ -75,35 +73,51 @@ void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware){
     device.finish();
     device.setStream(currentStream);
   }
+  if (gpu_aware) {
+    //post recvs
+    for (int r=0;r<NranksRecv;r++) {
+      MPI_Irecv((o_recvBuf+recvOffsets[r]*Nbytes).ptr(),
+                recvCounts[r], MPI_DFLOAT, recvRanks[r],
+                recvRanks[r], comm, requests+r);
+    }
 
-  //post recvs
-  for (int r=0;r<NranksRecv;r++) {
-    MPI_Irecv((char*)recvBuf+recvOffsets[r]*Nbytes,
-              recvCounts[r], MPI_DFLOAT, recvRanks[r],
-              recvRanks[r], comm, requests+r);
+    //post sends
+    for (int r=0;r<NranksSend;r++) {
+      MPI_Isend((o_sendBuf+sendOffsets[r]*Nbytes).ptr(),
+                sendCounts[r], MPI_DFLOAT, sendRanks[r],
+                rank, comm, requests+NranksRecv+r);
+    }
+  } else {
+    //post recvs
+    for (int r=0;r<NranksRecv;r++) {
+      MPI_Irecv((char*)recvBuf+recvOffsets[r]*Nbytes,
+                recvCounts[r], MPI_DFLOAT, recvRanks[r],
+                recvRanks[r], comm, requests+r);
+    }
+
+    //post sends
+    for (int r=0;r<NranksSend;r++) {
+      MPI_Isend((char*)sendBuf+sendOffsets[r]*Nbytes,
+                sendCounts[r], MPI_DFLOAT, sendRanks[r],
+                rank, comm, requests+NranksRecv+r);
+    }
   }
-
-  //post sends
-  for (int r=0;r<NranksSend;r++) {
-    MPI_Isend((char*)sendBuf+sendOffsets[r]*Nbytes,
-              sendCounts[r], MPI_DFLOAT, sendRanks[r],
-              rank, comm, requests+NranksRecv+r);
-  }
-
   MPI_Waitall(NranksRecv+NranksSend, requests, statuses);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
   dlong Nrecv = recvOffsets[NranksRecv];
   if (Nrecv) {
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
+    if (!gpu_aware) {
+      occa::stream currentStream = device.getStream();
+      device.setStream(dataStream);
 
-    // copy recv back to device
-    o_recvBuf.copyFrom(recvBuf, Nrecv*Nbytes, 0, "async: true");
+      // copy recv back to device
+      o_recvBuf.copyFrom(recvBuf, Nrecv*Nbytes, 0, "async: true");
 
-    device.finish();
-    device.setStream(currentStream);
+      device.finish();
+      device.setStream(currentStream);
+    }
 
     recvS->Apply(o_recvBuf, o_v);
   }

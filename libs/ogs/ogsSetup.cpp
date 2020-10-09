@@ -100,8 +100,6 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_a
   comm = _comm;
   gpu_aware = _gpu_aware;
   
-  std::cout << "gpu aware = " << gpu_aware << std::endl;
-  
   int rank, size;
   MPI_Comm_rank(comm, &rank);
   MPI_Comm_size(comm, &size);

@@ -40,10 +40,6 @@ void ogsAllToAll_t::Start(occa::memory& o_v, bool gpu_aware){
   // them into the send buffer
   sendS->Apply(o_v, o_sendBuf);
 
-  //ogs::ogs_t ogs(platform);
-
-  std::cout << "gpu aware all to all start = "<< gpu_aware << std::endl;
-
   dlong Nsend = mpiSendOffsets[size];
   if (Nsend) {
     occa::device &device = platform.device;
@@ -51,13 +47,15 @@ void ogsAllToAll_t::Start(occa::memory& o_v, bool gpu_aware){
     //wait for previous kernel to finish
     device.finish();
 
-    //switch streams to overlap data movement
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
+    if (!gpu_aware) {
+      //switch streams to overlap data movement
+      occa::stream currentStream = device.getStream();
+      device.setStream(dataStream);
 
-    o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
+      o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
 
-    device.setStream(currentStream);
+      device.setStream(currentStream);
+    }
   }
 }
 
@@ -67,8 +65,6 @@ void ogsAllToAll_t::Finish(occa::memory& o_v, bool gpu_aware){
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
 
-  std::cout << "gpu aware all to all finish = "<< gpu_aware << std::endl;
-
   dlong Nsend = mpiRecvOffsets[size];
   if (Nsend) {
     //synchronize data stream to ensure the send buffer has arrived on host
@@ -77,24 +73,31 @@ void ogsAllToAll_t::Finish(occa::memory& o_v, bool gpu_aware){
     device.finish();
     device.setStream(currentStream);
   }
-
-  // collect everything needed with single MPI all to all
-  MPI_Alltoallv(sendBuf, mpiSendCounts, mpiSendOffsets, MPI_DFLOAT,
-                recvBuf, mpiRecvCounts, mpiRecvOffsets, MPI_DFLOAT,
-                comm);
-
+  if (gpu_aware) {
+    // collect everything needed with single MPI all to all
+    MPI_Alltoallv(o_sendBuf.ptr(), mpiSendCounts, mpiSendOffsets, MPI_DFLOAT,
+                  o_recvBuf.ptr(), mpiRecvCounts, mpiRecvOffsets, MPI_DFLOAT,
+                  comm);
+  } else {
+    // collect everything needed with single MPI all to all
+    MPI_Alltoallv(sendBuf, mpiSendCounts, mpiSendOffsets, MPI_DFLOAT,
+                  recvBuf, mpiRecvCounts, mpiRecvOffsets, MPI_DFLOAT,
+                  comm);
+  }
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
   dlong Nrecv = mpiRecvOffsets[size];
   if (Nrecv) {
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
+    if (!gpu_aware) {
+      occa::stream currentStream = device.getStream();
+      device.setStream(dataStream);
 
-    // copy recv back to device
-    o_recvBuf.copyFrom(recvBuf, Nrecv*Nbytes, 0, "async: true");
+      // copy recv back to device
+      o_recvBuf.copyFrom(recvBuf, Nrecv*Nbytes, 0, "async: true");
 
-    device.finish();
-    device.setStream(currentStream);
+      device.finish();
+      device.setStream(currentStream);
+    }
 
     recvS->Apply(o_recvBuf, o_v);
   }
