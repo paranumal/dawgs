@@ -24,21 +24,28 @@ SOFTWARE.
 
 */
 
-#ifndef OGS_GATHERSCATTER_HPP
-#define OGS_GATHERSCATTER_HPP
+#ifndef OGS_GATHER_HPP
+#define OGS_GATHER_HPP
 
 #include "ogs.hpp"
-#include "ogs/ogsGather.hpp"
 
 namespace ogs {
 
-//a GatherScatter class is the composition of a Gather
-// followed by a Scatter (transposed Gather).
-class ogsGatherScatter_t {
+//a Gather class is essentially a sparse CSR matrix,
+// with no vals stored. By construction, all Gather
+// structs will have at most 1 non-zero per column.
+// We specialize the case where the Gather is diagonal,
+// i.e. has 1 non-zero per row.
+class ogsGather_t {
 public:
+  dlong nnz=0;
   dlong Nrows=0;
-  ogsGather_t* gather;
-  ogsGather_t* scatter;
+  dlong Ncols=0;
+  dlong *rowStarts=nullptr;
+  dlong *colIds=nullptr;
+
+  occa::memory o_rowStarts;
+  occa::memory o_colIds;
 
   dlong NrowBlocks=0;
   dlong *blockRowStarts=nullptr;
@@ -46,15 +53,15 @@ public:
 
   bool is_diag=false;
 
-  void setupRowBlocks(platform_t &platform);
-
   void Free();
 
-  void Apply(occa::memory& o_v);
-  void Apply(occa::memory& o_v, occa::memory& o_w);
+  void Apply(occa::memory& o_gv, occa::memory& o_v);
 
-  void Apply(dfloat *v);
+  void Apply(dfloat *gv, const dfloat* v);
+
+  void setupRowBlocks(platform_t &platform);
 };
+
 
 } //namespace ogs
 

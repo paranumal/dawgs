@@ -44,6 +44,7 @@ void factor3(const int size, int &size_x, int &size_y, int &size_z) {
           //swap if needed
           if (size_y>size_x) {int tmp=size_x; size_x=size_y; size_y=tmp;}
           if (size_z>size_y) {int tmp=size_y; size_y=size_z; size_z=tmp;}
+          if (size_y>size_x) {int tmp=size_x; size_x=size_y; size_y=tmp;}
 
           return;
         }
@@ -81,7 +82,7 @@ int main(int argc, char **argv){
     } else {
       settings.changeSetting("GPU AWARE", "FALSE");
     }
-  
+
   if (settings.compareSetting("VERBOSE", "TRUE"))
     settings.report();
 
@@ -113,7 +114,7 @@ int main(int argc, char **argv){
       std::cout << "Value:    TRUE" << std::endl << std::endl;
     else
       std::cout << "Value:    FALSE" << std::endl << std::endl;
-    
+
     std::cout << "MPI grid configuration: " << size_x << " x "
                                             << size_y << " x "
                                             << size_z << std::endl;
@@ -234,7 +235,7 @@ int main(int argc, char **argv){
   //   ogs.GatherScatter(o_q);
   //   platform.device.finish();
   // }
-  
+
   // dfloat starttime, endtime;
   // MPI_Barrier(comm);
   // starttime = MPI_Wtime();
@@ -244,14 +245,14 @@ int main(int argc, char **argv){
   //   ogs.GatherScatter(o_q);
   //   platform.device.finish();
   // }
-  
+
   // //platform.device.finish();
   // MPI_Barrier(comm);
   // endtime = MPI_Wtime();
 
   if (rank==0)
     std::cout << "Time taken = " << endtime-starttime << " seconds" << std::endl;
-  
+
   // close down MPI
   MPI_Finalize();
   return LIBP_SUCCESS;

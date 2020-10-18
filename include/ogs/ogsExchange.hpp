@@ -28,6 +28,9 @@ SOFTWARE.
 #define OGS_EXCHANGE_HPP
 
 #include "ogs.hpp"
+#include "ogs/ogsGather.hpp"
+#include "ogs/ogsScatter.hpp"
+#include "ogs/ogsGatherScatter.hpp"
 
 namespace ogs {
 
@@ -46,7 +49,7 @@ private:
   platform_t &platform;
   MPI_Comm comm;
   int rank, size;
-  
+
   ogsGather_t *prempi=nullptr, *postmpi=nullptr;
 
   ogsGatherScatter_t* sendS=nullptr;
@@ -74,7 +77,7 @@ public:
   virtual void Finish(occa::memory &o_v, bool ga);
 
   virtual void reallocOccaBuffer(size_t Nbytes);
-  
+
 };
 
 //MPI communcation via pairwise send/recvs
@@ -108,6 +111,49 @@ public:
                parallelNode_t* recvNodes,
                dlong NgatherLocal,
                ogsGather_t *gatherHalo,
+               dlong *indexMap,
+               MPI_Comm _comm,
+               platform_t &_platform);
+
+  virtual void Start(occa::memory &o_v, bool ga);
+  virtual void Finish(occa::memory &o_v, bool ga);
+
+  virtual void reallocOccaBuffer(size_t Nbytes);
+};
+
+//MPI communcation via crystal router
+class ogsCrystalRouter_t: public ogsExchange_t {
+private:
+  platform_t &platform;
+  MPI_Comm comm;
+  int rank, size;
+
+  ogsGather_t  *gatherHalo=nullptr;
+  ogsScatter_t *scatterHalo=nullptr;
+
+  ogsGather_t  *partialGather=nullptr;
+  ogsScatter_t *partialScatter=nullptr;
+  ogsGatherScatter_t* rootGS=nullptr;
+
+  void *sBuf=nullptr, *gBuf=nullptr;
+  occa::memory o_sBuf, o_gBuf;
+  occa::memory h_sBuf, h_gBuf;
+
+  int Npartners=0;
+  int upstreamPartner;
+  int *downstreamPartners =nullptr;
+
+  int sTotal=0, gTotal=0, Nsend=0;
+  int *sCounts =nullptr;
+  int *sOffsets=nullptr;
+  MPI_Request* requests;
+  MPI_Status* statuses;
+
+public:
+  ogsCrystalRouter_t(dlong recvN,
+               parallelNode_t* recvNodes,
+               dlong NgatherLocal,
+               ogsGather_t *_gatherHalo,
                dlong *indexMap,
                MPI_Comm _comm,
                platform_t &_platform);

@@ -24,38 +24,27 @@ SOFTWARE.
 
 */
 
-#ifndef OGS_GATHERSCATTER_HPP
-#define OGS_GATHERSCATTER_HPP
-
 #include "ogs.hpp"
 #include "ogs/ogsGather.hpp"
+#include "ogs/ogsScatter.hpp"
+#include "ogs/ogsGatherScatter.hpp"
+#include "ogs/ogsExchange.hpp"
 
 namespace ogs {
 
-//a GatherScatter class is the composition of a Gather
-// followed by a Scatter (transposed Gather).
-class ogsGatherScatter_t {
-public:
-  dlong Nrows=0;
-  ogsGather_t* gather;
-  ogsGather_t* scatter;
+void ogs_t::GatherScatterStart(occa::memory& o_v){
+  //prepare MPI exchange
+  exchange->Start(o_v, gpu_aware);
+}
 
-  dlong NrowBlocks=0;
-  dlong *blockRowStarts=nullptr;
-  occa::memory o_blockRowStarts;
 
-  bool is_diag=false;
+void ogs_t::GatherScatterFinish(occa::memory& o_v){
 
-  void setupRowBlocks(platform_t &platform);
+  //queue local gs operation
+  gsLocalS->Apply(o_v);
 
-  void Free();
-
-  void Apply(occa::memory& o_v);
-  void Apply(occa::memory& o_v, occa::memory& o_w);
-
-  void Apply(dfloat *v);
-};
+  //finish MPI exchange
+  exchange->Finish(o_v, gpu_aware);
+}
 
 } //namespace ogs
-
-#endif

@@ -24,38 +24,50 @@ SOFTWARE.
 
 */
 
-#ifndef OGS_GATHERSCATTER_HPP
-#define OGS_GATHERSCATTER_HPP
-
 #include "ogs.hpp"
+#include "ogs/ogsKernels.hpp"
 #include "ogs/ogsGather.hpp"
+#include "ogs/ogsScatter.hpp"
 
 namespace ogs {
 
-//a GatherScatter class is the composition of a Gather
-// followed by a Scatter (transposed Gather).
-class ogsGatherScatter_t {
-public:
-  dlong Nrows=0;
-  ogsGather_t* gather;
-  ogsGather_t* scatter;
+void ogsScatter_t::Apply(occa::memory& o_v, occa::memory& o_gv) {
+  if (Nrows)
+    scatterKernel_double(Nrows,
+                         o_colIds,
+                         o_gv,
+                         o_v);
+}
 
-  dlong NrowBlocks=0;
-  dlong *blockRowStarts=nullptr;
-  occa::memory o_blockRowStarts;
+void ogsScatter_t::Apply(dfloat *v, const dfloat *gv) {
 
-  bool is_diag=false;
+  for(dlong n=0;n<Nrows;++n){
+    const dlong id = colIds[n];
+    if (id>=0) v[n] = gv[id];
+  }
+}
 
-  void setupRowBlocks(platform_t &platform);
+ogsScatter_t::ogsScatter_t(ogsGather_t *gather, platform_t &platform) {
+  Nrows = gather->Ncols;
+  Ncols = gather->Nrows;
 
-  void Free();
+  if (gather->Nrows) {
+    colIds = (dlong*) malloc(Nrows*sizeof(dlong));
 
-  void Apply(occa::memory& o_v);
-  void Apply(occa::memory& o_v, occa::memory& o_w);
+    for (dlong n=0;n<Nrows;n++)
+      colIds[n] = -1;
 
-  void Apply(dfloat *v);
-};
+    for (dlong i=0;i<gather->Nrows;i++) {
+      const dlong start = gather->rowStarts[i];
+      const dlong end   = gather->rowStarts[i+1];
+      for (dlong j=start;j<end;j++) {
+        const dlong colId = gather->colIds[j];
+        colIds[colId] = i;
+      }
+    }
+
+    o_colIds = platform.malloc(Nrows*sizeof(dlong), colIds);
+  }
+}
 
 } //namespace ogs
-
-#endif

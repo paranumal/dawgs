@@ -76,11 +76,11 @@ public:
   void *hostMalloc(const size_t bytes,
                    const void *src,
                    occa::memory &h_mem){
-    occa::properties prop;
-    prop["mapped"] = true;
+    // occa::properties prop;
+    // prop["mapped"] = true;
     // h_mem = device.malloc(bytes, prop);
     // return h_mem.ptr(prop);
-    h_mem = device.malloc(bytes);
+    h_mem = device.hostMalloc(bytes);
     return h_mem.ptr();
   }
 

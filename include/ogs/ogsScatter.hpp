@@ -24,36 +24,33 @@ SOFTWARE.
 
 */
 
-#ifndef OGS_GATHERSCATTER_HPP
-#define OGS_GATHERSCATTER_HPP
+#ifndef OGS_SCATTER_HPP
+#define OGS_SCATTER_HPP
 
 #include "ogs.hpp"
-#include "ogs/ogsGather.hpp"
 
 namespace ogs {
 
-//a GatherScatter class is the composition of a Gather
-// followed by a Scatter (transposed Gather).
-class ogsGatherScatter_t {
+//a Scatter class is transposed Gather. Since all
+// Gathers will have at most 1 non-zero per column,
+// Scatters have at most 1 non-zero per row. We can
+// therefore represent a scatter with just an index
+// mapping
+class ogsScatter_t {
 public:
   dlong Nrows=0;
-  ogsGather_t* gather;
-  ogsGather_t* scatter;
+  dlong Ncols=0;
+  dlong *colIds=nullptr;
+  occa::memory o_colIds;
 
-  dlong NrowBlocks=0;
-  dlong *blockRowStarts=nullptr;
-  occa::memory o_blockRowStarts;
-
-  bool is_diag=false;
-
-  void setupRowBlocks(platform_t &platform);
+  //build a scatter operator from a transposed gather
+  ogsScatter_t(ogsGather_t * gather, platform_t &platform);
 
   void Free();
 
-  void Apply(occa::memory& o_v);
-  void Apply(occa::memory& o_v, occa::memory& o_w);
+  void Apply(occa::memory& o_gv, occa::memory& o_v);
 
-  void Apply(dfloat *v);
+  void Apply(dfloat *v, const dfloat *gv);
 };
 
 } //namespace ogs

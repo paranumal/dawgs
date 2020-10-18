@@ -95,11 +95,11 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_a
 
   //release resources if this ogs was setup before
   Free();
-  
+
   N = _N;
   comm = _comm;
   gpu_aware = _gpu_aware;
-  
+
   int rank, size;
   MPI_Comm_rank(comm, &rank);
   MPI_Comm_size(comm, &size);
@@ -194,8 +194,8 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_a
                                    malloc(recvN*sizeof(parallelNode_t));
 
   //Send all the nodes to their destination rank.
-  MPI_Alltoallv(sendNodes, sendCounts, sendOffsets, ogs::MPI_PARALLELNODE_T,
-                recvNodes, recvCounts, recvOffsets, ogs::MPI_PARALLELNODE_T,
+  MPI_Alltoallv(sendNodes, sendCounts, sendOffsets, MPI_PARALLELNODE_T,
+                recvNodes, recvCounts, recvOffsets, MPI_PARALLELNODE_T,
                 comm);
 
   MPI_Barrier(comm);
@@ -310,8 +310,8 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_a
               malloc(recvOffsets[size]*sizeof(parallelNode_t));
 
   //Share all the gathering info
-  MPI_Alltoallv(sendNodes, sendCounts, sendOffsets, ogs::MPI_PARALLELNODE_T,
-                recvNodes, recvCounts, recvOffsets, ogs::MPI_PARALLELNODE_T,
+  MPI_Alltoallv(sendNodes, sendCounts, sendOffsets, MPI_PARALLELNODE_T,
+                recvNodes, recvCounts, recvOffsets, MPI_PARALLELNODE_T,
                 comm);
 
   //free up the send space
@@ -387,8 +387,11 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_a
   // exchange = new ogsAllToAll_t(recvN, recvNodes, Nlocal,
   //                              gatherHalo, indexMap, comm, platform);
 
-  exchange = new ogsPairwise_t(recvN, recvNodes, Nlocal,
-                               gatherHalo, indexMap, comm, platform);
+  // exchange = new ogsPairwise_t(recvN, recvNodes, Nlocal,
+  //                              gatherHalo, indexMap, comm, platform);
+
+  exchange = new ogsCrystalRouter_t(recvN, recvNodes, Nlocal,
+                                   gatherHalo, indexMap, comm, platform);
 
   //we're now done with the recvNodes list
   free(recvNodes);
@@ -409,6 +412,9 @@ void ogs_t::LocalSetup(const dlong Nids, parallelNode_t* nodes,
   // MPI, with at least one positive scattered node on this rank
   gatherLocal = new ogsGather_t();
   gatherHalo  = new ogsGather_t();
+
+  gatherLocal->Ncols = N;
+  gatherHalo->Ncols = N;
 
   Nlocal=0; Nhalo=0;
   for (dlong n=0;n<Nids;n++) {

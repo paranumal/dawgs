@@ -38,7 +38,7 @@ void ogsAllToAll_t::Start(occa::memory& o_v, bool gpu_aware){
 
   // assemble mpi send buffer by gathering halo nodes and scattering
   // them into the send buffer
-  sendS->Apply(o_v, o_sendBuf);
+  sendS->Apply(o_sendBuf, o_v);
 
   dlong Nsend = mpiSendOffsets[size];
   if (Nsend) {
@@ -99,7 +99,7 @@ void ogsAllToAll_t::Finish(occa::memory& o_v, bool gpu_aware){
       device.setStream(currentStream);
     }
 
-    recvS->Apply(o_recvBuf, o_v);
+    recvS->Apply(o_v, o_recvBuf);
   }
 }
 
