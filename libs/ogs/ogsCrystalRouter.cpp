@@ -46,7 +46,6 @@ void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware){
     device.finish();
 
     if (!gpu_aware) {
-      std::cout << "CR Start on host " << std::endl;
       //switch streams to overlap data movement
       occa::stream currentStream = device.getStream();
       device.setStream(dataStream);
@@ -73,7 +72,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
   }
 
   if (gpu_aware){
-    std::cout << "CR Finish on device " << std::endl;
+    
     //post recvs
     for (int partner=0;partner<Npartners;partner++) {
       MPI_Irecv((o_sBuf+sOffsets[partner+1]*Nbytes).ptr(),
@@ -84,6 +83,9 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
     }
 
     MPI_Waitall(Npartners, requests, statuses);
+
+    occa::stream currentStream = device.getStream();
+    device.setStream(dataStream);
 
     if (rank==0) {
       //apply a gather scatter on the root rank
@@ -115,8 +117,14 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
     }
     MPI_Waitall(Npartners, requests, statuses);
 
+    if (scatterHalo->Ncols) {
+      scatterHalo->Apply(o_v, o_sBuf);
+    }
+
+    device.finish();
+    device.setStream(currentStream);
+
   } else { // not gpu-aware
-    std::cout << "CR Finish on host " << std::endl;
     //post recvs
     for (int partner=0;partner<Npartners;partner++) {
       MPI_Irecv((char*)sBuf+sOffsets[partner+1]*Nbytes,
@@ -154,11 +162,11 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
                 comm, requests+partner);
     }
     MPI_Waitall(Npartners, requests, statuses);
-  }
-  //if we recieved anything via MPI, gather the recv buffer and scatter
-  // it back to to original vector
-  if (scatterHalo->Ncols) {
-    if (!gpu_aware) {
+  
+    // if we recieved anything via MPI, gather the recv buffer and scatter
+    // it back to to original vector
+    if (scatterHalo->Ncols) {
+      
       occa::stream currentStream = device.getStream();
       device.setStream(dataStream);
 
@@ -167,9 +175,9 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
 
       device.finish();
       device.setStream(currentStream);
-    }
 
-    scatterHalo->Apply(o_v, o_sBuf);
+      scatterHalo->Apply(o_v, o_sBuf);
+    }
   }
 }
 
