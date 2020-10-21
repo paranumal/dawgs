@@ -45,13 +45,16 @@ void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware){
     //wait for previous kernel to finish
     device.finish();
 
-    //switch streams to overlap data movement
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
+    if (!gpu_aware) {
+      std::cout << "CR Start on host " << std::endl;
+      //switch streams to overlap data movement
+      occa::stream currentStream = device.getStream();
+      device.setStream(dataStream);
 
-    o_sBuf.copyTo(sBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
+      o_sBuf.copyTo(sBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
 
-    device.setStream(currentStream);
+      device.setStream(currentStream);
+    }
   }
 }
 
@@ -69,55 +72,100 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
     device.setStream(currentStream);
   }
 
-  //post recvs
-  for (int partner=0;partner<Npartners;partner++) {
-    MPI_Irecv((char*)sBuf+sOffsets[partner+1]*Nbytes,
-              sCounts[partner+1], MPI_DFLOAT,
-              downstreamPartners[partner],
-              downstreamPartners[partner],
-              comm, requests+partner);
+  if (gpu_aware){
+    std::cout << "CR Finish on device " << std::endl;
+    //post recvs
+    for (int partner=0;partner<Npartners;partner++) {
+      MPI_Irecv((o_sBuf+sOffsets[partner+1]*Nbytes).ptr(),
+                sCounts[partner+1], MPI_DFLOAT,
+                downstreamPartners[partner],
+                downstreamPartners[partner],
+                comm, requests+partner);
+    }
+
+    MPI_Waitall(Npartners, requests, statuses);
+
+    if (rank==0) {
+      //apply a gather scatter on the root rank
+      rootGS->Apply(o_sBuf);
+    } else {
+      //partially gather nodes on this rank
+      partialGather->Apply(o_gBuf, o_sBuf);
+
+      //send upstream
+      MPI_Send(o_gBuf.ptr(), Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
+
+      //recv gathered results
+      MPI_Recv(o_gBuf.ptr(), Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
+
+      //scatter back to recieved ordering
+      partialScatter->Apply(o_sBuf, o_gBuf);
+    }
+
+    //post sends downstream
+    for (int partner=0;partner<Npartners;partner++) {
+      MPI_Isend((o_sBuf+sOffsets[partner+1]*Nbytes).ptr(),
+                sCounts[partner+1], MPI_DFLOAT,
+                downstreamPartners[partner],
+                downstreamPartners[partner],
+                comm, requests+partner);
+    }
+    MPI_Waitall(Npartners, requests, statuses);
+
+  } else { // not gpu-aware
+    std::cout << "CR Finish on host " << std::endl;
+    //post recvs
+    for (int partner=0;partner<Npartners;partner++) {
+      MPI_Irecv((char*)sBuf+sOffsets[partner+1]*Nbytes,
+                sCounts[partner+1], MPI_DFLOAT,
+                downstreamPartners[partner],
+                downstreamPartners[partner],
+                comm, requests+partner);
+    }
+  
+    MPI_Waitall(Npartners, requests, statuses);
+
+    if (rank==0) {
+      //apply a gather scatter on the root rank
+      rootGS->Apply((dfloat*)sBuf);
+    } else {
+      //partially gather nodes on this rank
+      partialGather->Apply((dfloat*)gBuf, (dfloat*)sBuf);
+
+      //send upstream
+      MPI_Send(gBuf, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
+
+      //recv gathered results
+      MPI_Recv(gBuf, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
+
+      //scatter back to recieved ordering
+      partialScatter->Apply((dfloat*)sBuf, (dfloat*)gBuf);
+    }
+
+    //post sends downstream
+    for (int partner=0;partner<Npartners;partner++) {
+      MPI_Isend((char*)sBuf+sOffsets[partner+1]*Nbytes,
+                sCounts[partner+1], MPI_DFLOAT,
+                downstreamPartners[partner],
+                downstreamPartners[partner],
+                comm, requests+partner);
+    }
+    MPI_Waitall(Npartners, requests, statuses);
   }
-  MPI_Waitall(Npartners, requests, statuses);
-
-  if (rank==0) {
-    //apply a gather scatter on the root rank
-    rootGS->Apply((dfloat*)sBuf);
-  } else {
-    //partially gather nodes on this rank
-    partialGather->Apply((dfloat*)gBuf, (dfloat*)sBuf);
-
-    //send upstream
-    MPI_Send(gBuf, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
-
-    //recv gathered results
-    MPI_Recv(gBuf, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
-
-    //scatter back to recieved ordering
-    partialScatter->Apply((dfloat*)sBuf, (dfloat*)gBuf);
-  }
-
-  //post sends downstream
-  for (int partner=0;partner<Npartners;partner++) {
-    MPI_Isend((char*)sBuf+sOffsets[partner+1]*Nbytes,
-              sCounts[partner+1], MPI_DFLOAT,
-              downstreamPartners[partner],
-              downstreamPartners[partner],
-              comm, requests+partner);
-  }
-  MPI_Waitall(Npartners, requests, statuses);
-
   //if we recieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
   if (scatterHalo->Ncols) {
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
+    if (!gpu_aware) {
+      occa::stream currentStream = device.getStream();
+      device.setStream(dataStream);
 
-    // copy recv back to device
-    o_sBuf.copyFrom(sBuf, scatterHalo->Ncols*Nbytes, 0, "async: true");
+      // copy recv back to device
+      o_sBuf.copyFrom(sBuf, scatterHalo->Ncols*Nbytes, 0, "async: true");
 
-    device.finish();
-    device.setStream(currentStream);
-
+      device.finish();
+      device.setStream(currentStream);
+    }
+    
     scatterHalo->Apply(o_v, o_sBuf);
   }
 }
