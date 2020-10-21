@@ -88,9 +88,11 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
     if (rank==0) {
       //apply a gather scatter on the root rank
       rootGS->Apply(o_sBuf);
+      device.finish();
     } else {
       //partially gather nodes on this rank
       partialGather->Apply(o_gBuf, o_sBuf);
+      device.finish();
 
       //send upstream
       MPI_Send(o_gBuf.ptr(), Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
@@ -100,6 +102,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
 
       //scatter back to recieved ordering
       partialScatter->Apply(o_sBuf, o_gBuf);
+      device.finish();
     }
 
     //post sends downstream
@@ -165,7 +168,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
       device.finish();
       device.setStream(currentStream);
     }
-    
+
     scatterHalo->Apply(o_v, o_sBuf);
   }
 }
