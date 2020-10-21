@@ -205,16 +205,8 @@ int main(int argc, char **argv){
   //make a device array o_q, copying q from host on creation
   occa::memory o_q = platform.malloc(Nelements*Np*sizeof(dfloat), q);
 
-  dfloat starttime, endtime;
-  MPI_Barrier(comm);
-  starttime = MPI_Wtime();
-
   //call a gatherScatter operation
   ogs.GatherScatter(o_q);
-
-  platform.device.finish();
-  MPI_Barrier(comm);
-  endtime = MPI_Wtime();
 
   //copy back to host
   o_q.copyTo(q);
@@ -230,28 +222,29 @@ int main(int argc, char **argv){
   if (rank==0)
     std::cout << "Error = " << errG << std::endl;
 
-  // for (int n=0;n<2;n++) {
-  //   MPI_Barrier(comm);
-  //   ogs.GatherScatter(o_q);
-  //   platform.device.finish();
-  // }
+  for (int n=0;n<2;n++) {
+    MPI_Barrier(comm);
+    ogs.GatherScatter(o_q);
+    platform.device.finish();
+  }
 
-  // dfloat starttime, endtime;
-  // MPI_Barrier(comm);
-  // starttime = MPI_Wtime();
+  int n_iter = 10;
+  dfloat starttime, endtime;
+  MPI_Barrier(comm);
+  starttime = MPI_Wtime();
 
-  // for (int n=0;n<10;n++) {
-  //   MPI_Barrier(comm);
-  //   ogs.GatherScatter(o_q);
-  //   platform.device.finish();
-  // }
+  for (int n=0;n<n_iter;n++) {
+    MPI_Barrier(comm);
+    ogs.GatherScatter(o_q);
+    platform.device.finish();
+  }
 
-  // //platform.device.finish();
-  // MPI_Barrier(comm);
-  // endtime = MPI_Wtime();
+  //platform.device.finish();
+  MPI_Barrier(comm);
+  endtime = MPI_Wtime();
 
   if (rank==0)
-    std::cout << "Time taken = " << endtime-starttime << " seconds" << std::endl;
+    std::cout << "Time taken = " << (endtime-starttime)*1000/n_iter << " ms" << std::endl;
 
   // close down MPI
   MPI_Finalize();
