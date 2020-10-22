@@ -36,18 +36,28 @@ void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware){
   const size_t Nbytes = sizeof(dfloat);
   reallocOccaBuffer(Nbytes);
 
-  // assemble mpi send buffer by gathering halo nodes
-  gatherHalo->Apply(o_sBuf, o_v);
+  occa::device &device = platform.device;
+  occa::stream currentStream = device.getStream();
 
-  if (gatherHalo->Nrows) {
-    occa::device &device = platform.device;
+  if (gpu_aware) {
+    device.setStream(dataStream);
 
-    //wait for previous kernel to finish
-    device.finish();
+    // assemble mpi send buffer by gathering halo nodes
+    gatherHalo->Apply(o_sBuf, o_v);
 
-    if (!gpu_aware) {
+    device.setStream(currentStream);
+
+  } else {
+
+    // assemble mpi send buffer by gathering halo nodes
+    gatherHalo->Apply(o_sBuf, o_v);
+
+    if (gatherHalo->Nrows) {
+
+      //wait for previous kernel to finish
+      device.finish();
+
       //switch streams to overlap data movement
-      occa::stream currentStream = device.getStream();
       device.setStream(dataStream);
 
       o_sBuf.copyTo(sBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
@@ -62,14 +72,8 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
 
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
-
-  if (gatherHalo->Nrows) {
-    //synchronize data stream to ensure the send buffer has arrived on host
-    occa::stream currentStream = device.getStream();
-    device.setStream(dataStream);
-    device.finish();
-    device.setStream(currentStream);
-  }
+  
+  occa::stream currentStream = device.getStream();
 
   if (gpu_aware){
     
@@ -84,7 +88,6 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
 
     MPI_Waitall(Npartners, requests, statuses);
 
-    occa::stream currentStream = device.getStream();
     device.setStream(dataStream);
 
     if (rank==0) {
@@ -125,6 +128,13 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
     device.setStream(currentStream);
 
   } else { // not gpu-aware
+
+    if (gatherHalo->Nrows) {
+      //synchronize data stream to ensure the send buffer has arrived on host
+      device.setStream(dataStream);
+      device.finish();
+      device.setStream(currentStream);
+    }
     //post recvs
     for (int partner=0;partner<Npartners;partner++) {
       MPI_Irecv((char*)sBuf+sOffsets[partner+1]*Nbytes,
@@ -167,7 +177,6 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
     // it back to to original vector
     if (scatterHalo->Ncols) {
       
-      occa::stream currentStream = device.getStream();
       device.setStream(dataStream);
 
       // copy recv back to device
