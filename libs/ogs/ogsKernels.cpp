@@ -48,7 +48,8 @@ namespace ogs {
 #define DEFINE_GATHER_KERNEL(T,OP) \
   occa::kernel gatherKernel_##T##_##OP;
 
-#define DEFINE_SCATTER_KERNEL(T) \
+#define DEFINE_SCATTER_KERNEL(T)       \
+  occa::kernel scatterKernel_flat_##T; \
   occa::kernel scatterKernel_##T;
 
 #define DEFINE_KERNELS(T)                        \
@@ -120,7 +121,10 @@ void initKernels(platform_t& platform) {
                                              kernelInfo);                          \
 
 #define DEFINE_SCATTER_BUILD(T)                                                    \
-  scatterKernel_##T      = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",     \
+  scatterKernel_flat_##T      = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",\
+                                             "scatter_flat_" STR(T),                \
+                                             kernelInfo);                          \
+  scatterKernel_##T      = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",  \
                                              "scatter_" STR(T),                    \
                                              kernelInfo);                          \
 
@@ -143,6 +147,7 @@ void freeKernels() {
   gatherKernel_##T##_##OP.free();
 
 #define DEFINE_SCATTER_FREE(T)       \
+  scatterKernel_flat_##T.free();     \
   scatterKernel_##T.free();
 
 #define DEFINE_FREE(T)                         \

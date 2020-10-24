@@ -72,7 +72,8 @@ void freeKernels();
 #define DEFINE_GATHER_KERNEL(T,OP) \
   extern occa::kernel gatherKernel_##T##_##OP;
 
-#define DEFINE_SCATTER_KERNEL(T) \
+#define DEFINE_SCATTER_KERNEL(T)              \
+  extern occa::kernel scatterKernel_flat_##T; \
   extern occa::kernel scatterKernel_##T;
 
 #define DEFINE_KERNELS(T)                        \

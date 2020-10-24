@@ -40,11 +40,23 @@ class ogsScatter_t {
 public:
   dlong Nrows=0;
   dlong Ncols=0;
+
+  dlong *rowStarts=nullptr;
   dlong *colIds=nullptr;
+
+  occa::memory o_rowStarts;
   occa::memory o_colIds;
 
+  dlong NrowBlocks=0;
+  dlong *blockRowStarts=nullptr;
+  occa::memory o_blockRowStarts;
+
+  //optional flat indexing
+  bool flat=false;
+
   //build a scatter operator from a transposed gather
-  ogsScatter_t(ogsGather_t * gather, platform_t &platform);
+  ogsScatter_t(ogsGather_t * gather, platform_t &platform,
+               bool flatten=false);
 
   void Free();
 

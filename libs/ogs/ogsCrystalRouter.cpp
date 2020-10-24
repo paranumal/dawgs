@@ -72,11 +72,11 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
 
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
-  
+
   occa::stream currentStream = device.getStream();
 
   if (gpu_aware){
-    
+
     //post recvs
     for (int partner=0;partner<Npartners;partner++) {
       MPI_Irecv((o_sBuf+sOffsets[partner+1]*Nbytes).ptr(),
@@ -143,7 +143,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
                 downstreamPartners[partner],
                 comm, requests+partner);
     }
-  
+
     MPI_Waitall(Npartners, requests, statuses);
 
     if (rank==0) {
@@ -172,11 +172,11 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
                 comm, requests+partner);
     }
     MPI_Waitall(Npartners, requests, statuses);
-  
+
     // if we recieved anything via MPI, gather the recv buffer and scatter
     // it back to to original vector
     if (scatterHalo->Ncols) {
-      
+
       device.setStream(dataStream);
 
       // copy recv back to device
@@ -301,7 +301,6 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
   MPI_Comm_size(comm, &size);
 
   gatherHalo = _gatherHalo;
-  scatterHalo = new ogsScatter_t(gatherHalo, platform);
 
   //Determine our downstream partners and upstream partner
   // Our downstream partners are the ranks r + 2^k for
@@ -501,10 +500,11 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
   } else {
     //other ranks setup a gather operator
     partialGather->setupRowBlocks(platform);
-    partialScatter = new ogsScatter_t(partialGather, platform);
+    partialScatter = new ogsScatter_t(partialGather, platform, true);
   }
 
   gatherHalo->setupRowBlocks(platform);
+  scatterHalo = new ogsScatter_t(gatherHalo, platform);
 
   //free up the node lists
   MPI_Barrier(comm);
