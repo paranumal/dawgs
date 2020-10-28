@@ -219,8 +219,10 @@ int main(int argc, char **argv){
   dfloat errG=0.0;
   MPI_Reduce(&err, &errG, 1, MPI_DFLOAT, MPI_SUM, 0, comm);
 
-  if (rank==0)
+  if (rank==0) {
+    std::cout << "Global nodes per rank = " << Np*Nelements << std::endl;
     std::cout << "Error = " << errG << std::endl;
+  }
 
   for (int n=0;n<2;n++) {
     MPI_Barrier(comm);
