@@ -173,6 +173,10 @@ void settings_t::parseSettings(const int argc, char** argv) {
               strcmp(argv[i], "--gpu-aware") == 0) {
             changeSetting("GPU AWARE", "TRUE");
             i++;
+          } else if (strcmp(argv[i], "-cc") == 0 ||
+              strcmp(argv[i], "--correctness-check") == 0) {
+            changeSetting("CORRECTNESS CHECK", "TRUE");
+            i++;
           } else {
             changeSetting(setting->name, string(argv[i+1]));
             i+=2;

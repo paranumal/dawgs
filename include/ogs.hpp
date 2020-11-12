@@ -185,6 +185,9 @@ typedef enum { ogs_add, ogs_mul, ogs_max, ogs_min, ogs_op_n} ogs_op;
 /* transpose switch */
 typedef enum { ogs_sym, ogs_notrans, ogs_trans } ogs_transpose;
 
+/* method switch */
+typedef enum { ogs_auto, ogs_pairwise, ogs_crystal_router, ogs_all_reduce} ogs_method;
+
 //forward declarations
 class ogsGather_t;
 class ogsScatter_t;
@@ -217,14 +220,14 @@ public:
   static void Unique(hlong *ids, dlong _N, MPI_Comm _comm);
 
   // Synchronous device buffer versions
-  void GatherScatter    (occa::memory&  o_v){
-    GatherScatterStart (o_v);
-    GatherScatterFinish(o_v);
+  void GatherScatter    (occa::memory&  o_v, const ogs_method method){
+    GatherScatterStart (o_v, method);
+    GatherScatterFinish(o_v, method);
   }
 
   // Asynchronous device buffer versions
-  void GatherScatterStart     (occa::memory&  o_v);
-  void GatherScatterFinish    (occa::memory&  o_v);
+  void GatherScatterStart     (occa::memory&  o_v, const ogs_method method);
+  void GatherScatterFinish    (occa::memory&  o_v, const ogs_method method);
 
 private:
   ogsGather_t *gatherLocal=nullptr;
@@ -235,7 +238,9 @@ private:
   ogsGather_t *gatherHalo=nullptr;
   ogsScatter_t *scatterHalo=nullptr;
 
-  ogsExchange_t *exchange=nullptr;
+  ogsExchange_t *exchange_ar=nullptr;
+  ogsExchange_t *exchange_pw=nullptr;
+  ogsExchange_t *exchange_cr=nullptr;
 
   void LocalSetup(const dlong Nids, parallelNode_t* nodes,
                   const dlong NbaseIds, dlong *indexMap);

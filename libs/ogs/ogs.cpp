@@ -32,19 +32,31 @@ SOFTWARE.
 
 namespace ogs {
 
-void ogs_t::GatherScatterStart(occa::memory& o_v){
+void ogs_t::GatherScatterStart(occa::memory& o_v,
+                               const ogs_method method){
   //prepare MPI exchange
-  exchange->Start(o_v, gpu_aware);
+  if (method == ogs_all_reduce)
+    exchange_ar->Start(o_v, gpu_aware);
+  else if (method == ogs_pairwise)
+    exchange_pw->Start(o_v, gpu_aware);
+  else
+    exchange_cr->Start(o_v, gpu_aware);
 }
 
 
-void ogs_t::GatherScatterFinish(occa::memory& o_v){
+void ogs_t::GatherScatterFinish(occa::memory& o_v,
+                                const ogs_method method){
 
   //queue local gs operation
   gsLocalS->Apply(o_v);
 
   //finish MPI exchange
-  exchange->Finish(o_v, gpu_aware);
+  if (method == ogs_all_reduce)
+    exchange_ar->Finish(o_v, gpu_aware);
+  else if (method == ogs_pairwise)
+    exchange_pw->Finish(o_v, gpu_aware);
+  else
+    exchange_cr->Finish(o_v, gpu_aware);
 }
 
 } //namespace ogs

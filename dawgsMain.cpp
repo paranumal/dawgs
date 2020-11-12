@@ -42,9 +42,9 @@ void factor3(const int size, int &size_x, int &size_y, int &size_z) {
           size_z = f/size_y; //divide out size_y
 
           //swap if needed
-          if (size_y>size_x) {int tmp=size_x; size_x=size_y; size_y=tmp;}
-          if (size_z>size_y) {int tmp=size_y; size_y=size_z; size_z=tmp;}
-          if (size_y>size_x) {int tmp=size_x; size_x=size_y; size_y=tmp;}
+          if (size_y>size_x) {std::swap(size_x,size_y);}
+          if (size_z>size_y) {std::swap(size_y,size_z);}
+          if (size_y>size_x) {std::swap(size_x,size_y);}
 
           return;
         }
@@ -66,6 +66,95 @@ void factor3(const int size, int &size_x, int &size_y, int &size_z) {
   size_y = size_z = 1;
 }
 
+void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
+                     dfloat *qtest, dfloat *qcheck,
+                     ogs::ogs_t &ogs, const ogs::ogs_method method,
+                     bool gpu_aware, MPI_Comm comm) {
+  int rank = ogs.platform.rank;
+
+  o_q.copyFrom(q);
+
+  //call a gatherScatter operation
+  ogs.GatherScatter(o_q, method);
+
+  //copy back to host
+  o_q.copyTo(qtest);
+
+  dfloat err=0.0;
+  for (dlong n=0;n<N;n++) err += fabs(qtest[n]-qcheck[n]);
+
+  dfloat errG=0.0;
+  MPI_Reduce(&err, &errG, 1, MPI_DFLOAT, MPI_SUM, 0, comm);
+
+  if (rank==0) {
+    if (method==ogs::ogs_all_reduce)
+      std::cout << "AllToAll Method ";
+    else if (method==ogs::ogs_pairwise)
+      std::cout << "Pairwise Method ";
+    else
+      std::cout << "Crystal Router Method ";
+
+    if (gpu_aware)
+      std::cout << "GPU-aware ";
+
+    std::cout << "Error = " << errG << std::endl;
+  }
+}
+
+
+void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
+                     occa::memory &o_q, ogs::ogs_t &ogs,
+                     const ogs::ogs_method method,
+                     bool gpu_aware, MPI_Comm comm) {
+
+  int rank = ogs.platform.rank;
+  int size = ogs.platform.size;
+
+  int Nwarmup = 10;
+  MPI_Barrier(comm);
+  for (int n=0;n<Nwarmup;n++) {
+    ogs.GatherScatter(o_q, method);
+    ogs.platform.device.finish();
+  }
+
+  int n_iter = 50;
+  dfloat starttime, endtime;
+
+  MPI_Barrier(comm);
+  starttime = MPI_Wtime();
+
+  for (int n=0;n<n_iter;n++) {
+    ogs.GatherScatter(o_q, method);
+    ogs.platform.device.finish();
+  }
+
+  //platform.device.finish();
+  MPI_Barrier(comm);
+  endtime = MPI_Wtime();
+
+  double elapsed = (endtime-starttime)*1000/n_iter;
+
+  if (rank==0) {
+    if (method==ogs::ogs_all_reduce)
+      std::cout << "AR ";
+    else if (method==ogs::ogs_pairwise)
+      std::cout << "PW ";
+    else
+      std::cout << "CR ";
+
+    if (gpu_aware)
+      std::cout << "GPU-aware ";
+
+    std::cout << ": Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << Ndofs << ", ";
+    std::cout << "Max Local DOFS = " << Nlocal << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsed << " ms, ";
+    std::cout << "DOFS/s = " <<  (Ndofs*1000.0)/elapsed << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (Ndofs*1000.0)/(elapsed*size) << std::endl;
+  }
+}
+
 int main(int argc, char **argv){
 
   // start up MPI
@@ -77,14 +166,11 @@ int main(int argc, char **argv){
   dawgsSettings_t settings(argc, argv, comm);
 
   if (settings.compareSetting("GPU AWARE", "TRUE")
-    &&(settings.compareSetting("THREAD MODEL","HIP"))) {
-      settings.changeSetting("GPU AWARE", "TRUE");
-    } else {
-      settings.changeSetting("GPU AWARE", "FALSE");
-    }
-
-  if (settings.compareSetting("VERBOSE", "TRUE"))
-    settings.report();
+      &&(settings.compareSetting("THREAD MODEL","HIP"))) {
+    settings.changeSetting("GPU AWARE", "TRUE");
+  } else {
+    settings.changeSetting("GPU AWARE", "FALSE");
+  }
 
   // set up platform (wraps OCCA device)
   platform_t platform(settings);
@@ -100,25 +186,8 @@ int main(int argc, char **argv){
   int size_x, size_y, size_z;
   factor3(size, size_x, size_y, size_z);
 
-  //parse GPU-aware setting from cmd line
-  bool gpu_aware;
-  gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
-
   //global MPI rank
   int rank = platform.rank;
-
-  if (rank==0) {
-    std::cout << "Name:     [GPU AWARE]" << std::endl;
-    std::cout << "CL keys:  [-ga, --gpu-aware]" << std::endl;
-    if (gpu_aware)
-      std::cout << "Value:    TRUE" << std::endl << std::endl;
-    else
-      std::cout << "Value:    FALSE" << std::endl << std::endl;
-
-    std::cout << "MPI grid configuration: " << size_x << " x "
-                                            << size_y << " x "
-                                            << size_z << std::endl;
-  }
 
   //find our coordinates in the MPI grid such that
   // rank = rank_x + rank_y*size_x + rank_z*size_x*size_y
@@ -126,16 +195,47 @@ int main(int argc, char **argv){
   int rank_y = (rank-rank_z*size_x*size_y)/size_x;
   int rank_x = rank % size_x;
 
+  //parse GPU-aware setting from cmd line
+  bool gpu_aware;
+  gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
+
+
+  if (settings.compareSetting("VERBOSE", "TRUE"))
+    settings.report();
+
   //number of cubes in each dimension
-  dlong NX, NY, NZ;
+  dlong NX, NY, NZ; //global
+  dlong nx, ny, nz; //local
+
+  //get global size from settings
   settings.getSetting("BOX NX", NX);
   settings.getSetting("BOX NY", NY);
   settings.getSetting("BOX NZ", NZ);
 
-  //compute number of cubes on my rank (adding 1 for remainders on some ranks)
-  dlong nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
-  dlong ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
-  dlong nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
+  //get local size from settings
+  settings.getSetting("LOCAL BOX NX", nx);
+  settings.getSetting("LOCAL BOX NY", ny);
+  settings.getSetting("LOCAL BOX NZ", nz);
+  if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
+    //set global size by multiplying local size by grid dims
+    NX = nx * size_x;
+    NY = ny * size_y;
+    NZ = nz * size_z;
+    settings.changeSetting("BOX NX", std::to_string(NX));
+    settings.changeSetting("BOX NY", std::to_string(NY));
+    settings.changeSetting("BOX NZ", std::to_string(NZ));
+  } else {
+    //WARNING setting global sizes on input overrides any local sizes provided
+    nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
+    ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
+    nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
+  }
+
+  if (rank==0 && settings.compareSetting("VERBOSE", "TRUE")) {
+    std::cout << "MPI grid configuration: " << size_x << " x "
+                                            << size_y << " x "
+                                            << size_z << std::endl;
+  }
 
   dlong Nelements = nx*ny*nz;
 
@@ -183,70 +283,95 @@ int main(int argc, char **argv){
   int verbose = 1;
   ogs.Setup(Nelements*Np, ids, comm, verbose, gpu_aware);
 
-  //make a host gs handle (calls gslib)
-  void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
-  free(ids);
-
-  /*************************
-   * Test correctness
-   *************************/
-
   //make an array
   dfloat *q = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
-
-  //populate an array with the result we expect
-  dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
   //fill with ones
   for (dlong n=0;n<Nelements*Np;n++) q[n]=1.0;
 
-  for (dlong n=0;n<Nelements*Np;n++) qtest[n] = q[n];
-
   //make a device array o_q, copying q from host on creation
   occa::memory o_q = platform.malloc(Nelements*Np*sizeof(dfloat), q);
 
-  //call a gatherScatter operation
-  ogs.GatherScatter(o_q);
 
-  //copy back to host
-  o_q.copyTo(q);
+  if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
+    /*************************
+     * Test correctness
+     *************************/
+    //make a host gs handle (calls gslib)
+    void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
 
-  gsGatherScatter(qtest, gsHandle);
+    if (rank==0) {
+      std::cout << "Ranks = " << size << ", ";
+      std::cout << "Global DOFS = " << Np*NX*NY*NZ << ", ";
+      std::cout << "Max Local DOFS = " << Np*Nelements << ", ";
+      std::cout << "Degree = " << N << std::endl;
+    }
 
-  dfloat err=0.0;
-  for (dlong n=0;n<Nelements*Np;n++) err += fabs(q[n]-qtest[n]);
+    //populate an array with the result we expect
+    dfloat *qcheck = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
-  dfloat errG=0.0;
-  MPI_Reduce(&err, &errG, 1, MPI_DFLOAT, MPI_SUM, 0, comm);
+    for (dlong n=0;n<Nelements*Np;n++) qcheck[n] = q[n];
 
-  if (rank==0) {
-    std::cout << "Global nodes per rank = " << Np*Nelements << std::endl;
-    std::cout << "Error = " << errG << std::endl;
+    //make the golden result
+    gsGatherScatter(qcheck, gsHandle);
+
+    dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
+
+    CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_all_reduce, false, comm);
+
+    CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_pairwise, false, comm);
+
+    CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_crystal_router, false, comm);
+
+    if (gpu_aware) {
+      CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_all_reduce, true, comm);
+
+      CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck,
+                      ogs, ogs::ogs_pairwise, true, comm);
+
+      CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck,
+                      ogs, ogs::ogs_crystal_router, true, comm);
+    }
+
+  } else {
+    /*************************
+     * Performance Test
+     *************************/
+    int64_t Ndofs = ((int64_t) Np)*NX*NY*NZ;
+    int Nlocal = Np*Nelements;
+
+    //All to all
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, comm);
+
+    //Pairwise
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, comm);
+
+    //Crystal Router
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, comm);
+
+    if (gpu_aware) {
+      //All to all
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, comm);
+
+      //Pairwise
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, comm);
+
+      //Crystal Router
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, comm);
+    }
   }
 
-  for (int n=0;n<2;n++) {
-    MPI_Barrier(comm);
-    ogs.GatherScatter(o_q);
-    platform.device.finish();
-  }
-
-  int n_iter = 10;
-  dfloat starttime, endtime;
-  MPI_Barrier(comm);
-  starttime = MPI_Wtime();
-
-  for (int n=0;n<n_iter;n++) {
-    MPI_Barrier(comm);
-    ogs.GatherScatter(o_q);
-    platform.device.finish();
-  }
-
-  //platform.device.finish();
-  MPI_Barrier(comm);
-  endtime = MPI_Wtime();
-
-  if (rank==0)
-    std::cout << "Time taken = " << (endtime-starttime)*1000/n_iter << " ms" << std::endl;
+  free(ids);
 
   // close down MPI
   MPI_Finalize();

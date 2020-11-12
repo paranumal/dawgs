@@ -383,15 +383,20 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_a
   // need gs operators to scatter/gather the coalesced halo nodes to/from the expected
   // orderings for MPI communications.
 
-  //TODO make this a option
-  // exchange = new ogsAllToAll_t(recvN, recvNodes, Nlocal,
-  //                              gatherHalo, indexMap, comm, platform);
+  exchange_ar = new ogsAllToAll_t(recvN, recvNodes, Nlocal,
+                               gatherHalo, indexMap, comm, platform);
 
-  // exchange = new ogsPairwise_t(recvN, recvNodes, Nlocal,
-  //                              gatherHalo, indexMap, comm, platform);
+  // Need this to make the back-to-back setups work
+  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareBaseId);
 
-  exchange = new ogsCrystalRouter_t(recvN, recvNodes, Nlocal,
-                                   gatherHalo, indexMap, comm, platform);
+  exchange_pw = new ogsPairwise_t(recvN, recvNodes, Nlocal,
+                               gatherHalo, indexMap, comm, platform);
+
+  // Need this to make the back-to-back setups work
+  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareBaseId);
+
+  exchange_cr = new ogsCrystalRouter_t(recvN, recvNodes, Nlocal,
+                               gatherHalo, indexMap, comm, platform);
 
   //we're now done with the recvNodes list
   free(recvNodes);

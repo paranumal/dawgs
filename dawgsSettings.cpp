@@ -47,17 +47,30 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
              "Parallel device number");
 
   newSetting("-nx", "--dimx",
-             "BOX NX",
+             "LOCAL BOX NX",
              "10",
              "Number of elements in X-dimension");
   newSetting("-ny", "--dimy",
-             "BOX NY",
+             "LOCAL BOX NY",
              "10",
              "Number of elements in Y-dimension");
   newSetting("-nz", "--dimz",
-             "BOX NZ",
+             "LOCAL BOX NZ",
              "10",
              "Number of elements in Z-dimension");
+
+  newSetting("-NX", "--DIMX",
+             "BOX NX",
+             "-1",
+             "Global number of elements in X-dimension");
+  newSetting("-NY", "--DIMY",
+             "BOX NY",
+             "-1",
+             "Global number of elements in Y-dimension");
+  newSetting("-NZ", "--DIMZ",
+             "BOX NZ",
+             "-1",
+             "Global number of elements in Z-dimension");
 
   newSetting("-p", "--degree",
              "POLYNOMIAL DEGREE",
@@ -75,6 +88,12 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
              "GPU AWARE",
              "FALSE",
              "Enable GPU aware",
+             {"TRUE", "FALSE"});
+
+  newSetting("-cc", "--correctness-check",
+             "CORRECTNESS CHECK",
+             "FALSE",
+             "Check correctness of results using gslib",
              {"TRUE", "FALSE"});
 
   parseSettings(argc, argv);
@@ -105,5 +124,9 @@ void dawgsSettings_t::report() {
     reportSetting("BOX NZ");
 
     reportSetting("POLYNOMIAL DEGREE");
+
+    reportSetting("GPU AWARE");
+
+    reportSetting("CORRECTNESS CHECK");
   }
 }
