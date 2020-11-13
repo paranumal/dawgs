@@ -65,7 +65,7 @@ OGS_FOR_EACH_TYPE(DEFINE_KERNELS)
 
 void initKernels(platform_t& platform) {
 
-  int rank = platform.rank;
+  // int rank = platform.rank;
 
   // Make the MPI_PARALLELNODE_T data type
   parallelNode_t node;

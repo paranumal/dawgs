@@ -202,8 +202,6 @@ public:
   platform_t& platform;
   MPI_Comm comm;
 
-  bool gpu_aware;
-
   dlong         N=0;
   dlong         Nlocal=0;         //  number of local nodes
   dlong         Nhalo=0;          //  number of halo nodes
@@ -214,20 +212,23 @@ public:
   ogs_t(platform_t& _platform);
   ~ogs_t();
 
-  void Setup(dlong N, hlong *ids, MPI_Comm comm, int verbose, bool gpu_aware);
+  void Setup(dlong N, hlong *ids, MPI_Comm comm, int verbose);
   void Free();
 
   static void Unique(hlong *ids, dlong _N, MPI_Comm _comm);
 
   // Synchronous device buffer versions
-  void GatherScatter    (occa::memory&  o_v, const ogs_method method){
-    GatherScatterStart (o_v, method);
-    GatherScatterFinish(o_v, method);
+  void GatherScatter    (occa::memory&  o_v, const ogs_method method,
+                         const bool gpu_aware){
+    GatherScatterStart (o_v, method, gpu_aware);
+    GatherScatterFinish(o_v, method, gpu_aware);
   }
 
   // Asynchronous device buffer versions
-  void GatherScatterStart     (occa::memory&  o_v, const ogs_method method);
-  void GatherScatterFinish    (occa::memory&  o_v, const ogs_method method);
+  void GatherScatterStart     (occa::memory&  o_v, const ogs_method method,
+                               const bool gpu_aware);
+  void GatherScatterFinish    (occa::memory&  o_v, const ogs_method method,
+                               const bool gpu_aware);
 
 private:
   ogsGather_t *gatherLocal=nullptr;

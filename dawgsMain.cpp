@@ -75,7 +75,7 @@ void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
   o_q.copyFrom(q);
 
   //call a gatherScatter operation
-  ogs.GatherScatter(o_q, method);
+  ogs.GatherScatter(o_q, method, gpu_aware);
 
   //copy back to host
   o_q.copyTo(qtest);
@@ -113,7 +113,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   int Nwarmup = 10;
   MPI_Barrier(comm);
   for (int n=0;n<Nwarmup;n++) {
-    ogs.GatherScatter(o_q, method);
+    ogs.GatherScatter(o_q, method, gpu_aware);
     ogs.platform.device.finish();
   }
 
@@ -124,7 +124,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   starttime = MPI_Wtime();
 
   for (int n=0;n<n_iter;n++) {
-    ogs.GatherScatter(o_q, method);
+    ogs.GatherScatter(o_q, method, gpu_aware);
     ogs.platform.device.finish();
   }
 
@@ -199,10 +199,6 @@ int main(int argc, char **argv){
   bool gpu_aware;
   gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
 
-
-  if (settings.compareSetting("VERBOSE", "TRUE"))
-    settings.report();
-
   //number of cubes in each dimension
   dlong NX, NY, NZ; //global
   dlong nx, ny, nz; //local
@@ -230,6 +226,9 @@ int main(int argc, char **argv){
     ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
     nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
   }
+
+  if (settings.compareSetting("VERBOSE", "TRUE"))
+    settings.report();
 
   if (rank==0 && settings.compareSetting("VERBOSE", "TRUE")) {
     std::cout << "MPI grid configuration: " << size_x << " x "
@@ -281,7 +280,7 @@ int main(int argc, char **argv){
   ogs::ogs_t ogs(platform);
 
   int verbose = 1;
-  ogs.Setup(Nelements*Np, ids, comm, verbose, gpu_aware);
+  ogs.Setup(Nelements*Np, ids, comm, verbose);
 
   //make an array
   dfloat *q = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));

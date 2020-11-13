@@ -33,7 +33,8 @@ SOFTWARE.
 namespace ogs {
 
 void ogs_t::GatherScatterStart(occa::memory& o_v,
-                               const ogs_method method){
+                               const ogs_method method,
+                               const bool gpu_aware){
   //prepare MPI exchange
   if (method == ogs_all_reduce)
     exchange_ar->Start(o_v, gpu_aware);
@@ -45,7 +46,8 @@ void ogs_t::GatherScatterStart(occa::memory& o_v,
 
 
 void ogs_t::GatherScatterFinish(occa::memory& o_v,
-                                const ogs_method method){
+                                const ogs_method method,
+                                const bool gpu_aware){
 
   //queue local gs operation
   gsLocalS->Apply(o_v);

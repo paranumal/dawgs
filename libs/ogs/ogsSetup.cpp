@@ -91,14 +91,13 @@ static int compareLocalId(const void *a, const void *b){
   return 0;
 }
 
-void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose, bool _gpu_aware){
+void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
 
   //release resources if this ogs was setup before
   Free();
 
   N = _N;
   comm = _comm;
-  gpu_aware = _gpu_aware;
 
   int rank, size;
   MPI_Comm_rank(comm, &rank);
