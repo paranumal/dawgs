@@ -108,7 +108,7 @@ void initKernels(platform_t& platform) {
 
   kernelInfo["includes"] += LIBP_DIR "/include/ogs/ogsDefs.h";
 
-  if (rank==0) {printf("Compiling GatherScatter Kernels...");fflush(stdout);}
+  // if (rank==0) {printf("Compiling GatherScatter Kernels...");fflush(stdout);}
 
 #define DEFINE_GATHERSCATTER_BUILD(T,OP)                                           \
   gatherScatterKernel_##T##_##OP = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",\
@@ -135,7 +135,7 @@ void initKernels(platform_t& platform) {
 
   OGS_FOR_EACH_TYPE(DEFINE_BUILD)
 
-  if(rank==0) printf("done.\n");
+  // if(rank==0) printf("done.\n");
 }
 
 void freeKernels() {
