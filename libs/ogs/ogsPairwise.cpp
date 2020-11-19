@@ -31,76 +31,77 @@ SOFTWARE.
 
 namespace ogs {
 
-void ogsPairwise_t::Start(occa::memory& o_v, bool gpu_aware){
+void ogsPairwise_t::Start(occa::memory& o_v, bool gpu_aware, bool overlap){
 
   const size_t Nbytes = sizeof(dfloat);
   reallocOccaBuffer(Nbytes);
 
-  // assemble mpi send buffer by gathering halo nodes and scattering
-  // them into the send buffer
-  sendS->Apply(o_sendBuf, o_v);
+  occa::device &device = platform.device;
+
+  //get current stream
+  occa::stream currentStream = device.getStream();
 
   dlong Nsend = sendOffsets[NranksSend];
   if (Nsend) {
-    occa::device &device = platform.device;
-
-    //wait for previous kernel to finish
-    device.finish();
-
-    if (!gpu_aware) {
-      //switch streams to overlap data movement
-      occa::stream currentStream = device.getStream();
+    //if overlapping the halo kernels, switch streams
+    if (overlap)
       device.setStream(dataStream);
 
-      o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
+    // assemble mpi send buffer by gathering halo nodes and scattering
+    // them into the send buffer
+    sendS->Apply(o_sendBuf, o_v);
 
-      device.setStream(currentStream);
+    //if not overlapping, wait for kernel to finish on default stream
+    if (!overlap)
+      device.finish();
+
+    //if using gpu-aware mpi, queue the data movement into dataStream
+    if (!gpu_aware) {
+      device.setStream(dataStream);
+      o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
     }
+
+    device.setStream(currentStream);
   }
 }
 
 
-void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware){
+void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
 
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
 
+  //get current stream
+  occa::stream currentStream = device.getStream();
+
   dlong Nsend = sendOffsets[NranksSend];
   if (Nsend) {
-    //synchronize data stream to ensure the send buffer has arrived on host
-    occa::stream currentStream = device.getStream();
+    //synchronize data stream to ensure the send buffer is ready to send
     device.setStream(dataStream);
     device.finish();
-    device.setStream(currentStream);
   }
-  if (gpu_aware) {
-    //post recvs
-    for (int r=0;r<NranksRecv;r++) {
-      MPI_Irecv((o_recvBuf+recvOffsets[r]*Nbytes).ptr(),
-                recvCounts[r], MPI_DFLOAT, recvRanks[r],
-                recvRanks[r], comm, requests+r);
-    }
 
-    //post sends
-    for (int r=0;r<NranksSend;r++) {
-      MPI_Isend((o_sendBuf+sendOffsets[r]*Nbytes).ptr(),
-                sendCounts[r], MPI_DFLOAT, sendRanks[r],
-                rank, comm, requests+NranksRecv+r);
-    }
-  } else {
-    //post recvs
-    for (int r=0;r<NranksRecv;r++) {
-      MPI_Irecv((char*)recvBuf+recvOffsets[r]*Nbytes,
-                recvCounts[r], MPI_DFLOAT, recvRanks[r],
-                recvRanks[r], comm, requests+r);
-    }
+  char *sendPtr, *recvPtr;
+  if (gpu_aware) { //device pointer
+    sendPtr = (char*)o_sendBuf.ptr();
+    recvPtr = (char*)o_recvBuf.ptr();
+  } else { //host pointer
+    sendPtr = (char*)sendBuf;
+    recvPtr = (char*)recvBuf;
+  }
 
-    //post sends
-    for (int r=0;r<NranksSend;r++) {
-      MPI_Isend((char*)sendBuf+sendOffsets[r]*Nbytes,
-                sendCounts[r], MPI_DFLOAT, sendRanks[r],
-                rank, comm, requests+NranksRecv+r);
-    }
+  //post recvs
+  for (int r=0;r<NranksRecv;r++) {
+    MPI_Irecv(recvPtr+recvOffsets[r]*Nbytes,
+              recvCounts[r], MPI_DFLOAT, recvRanks[r],
+              recvRanks[r], comm, requests+r);
+  }
+
+  //post sends
+  for (int r=0;r<NranksSend;r++) {
+    MPI_Isend(sendPtr+sendOffsets[r]*Nbytes,
+              sendCounts[r], MPI_DFLOAT, sendRanks[r],
+              rank, comm, requests+NranksRecv+r);
   }
   MPI_Waitall(NranksRecv+NranksSend, requests, statuses);
 
@@ -109,18 +110,27 @@ void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware){
   dlong Nrecv = recvOffsets[NranksRecv];
   if (Nrecv) {
     if (!gpu_aware) {
-      occa::stream currentStream = device.getStream();
-      device.setStream(dataStream);
-
       // copy recv back to device
+      device.setStream(dataStream);
       o_recvBuf.copyFrom(recvBuf, Nrecv*Nbytes, 0, "async: true");
+      if (!overlap) device.finish(); //wait for transfer to finish if not overlapping halo kernel
+    }
 
-      device.finish();
+    //if overlapping the halo kernels, switch streams
+    if (overlap) {
+      device.setStream(dataStream);
+    } else {
       device.setStream(currentStream);
     }
 
     recvS->Apply(o_v, o_recvBuf);
+
+    if (overlap) { //if overlapping halo kernels wait for kernel to finish
+      device.finish();
+    }
   }
+
+  device.setStream(currentStream);
 }
 
 // compare on rank then local id

@@ -31,7 +31,7 @@ SOFTWARE.
 
 namespace ogs {
 
-void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware){
+void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware, bool overlap){
 
   const size_t Nbytes = sizeof(dfloat);
   reallocOccaBuffer(Nbytes);
@@ -39,155 +39,130 @@ void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware){
   occa::device &device = platform.device;
   occa::stream currentStream = device.getStream();
 
-  if (gpu_aware) {
-    device.setStream(dataStream);
-
-    // assemble mpi send buffer by gathering halo nodes
-    gatherHalo->Apply(o_sBuf, o_v);
-
-    device.setStream(currentStream);
-
-  } else {
-
-    // assemble mpi send buffer by gathering halo nodes
-    gatherHalo->Apply(o_sBuf, o_v);
-
-    if (gatherHalo->Nrows) {
-
-      //wait for previous kernel to finish
-      device.finish();
-
-      //switch streams to overlap data movement
+  if (gatherHalo->Nrows) {
+    //if overlapping the halo kernels, switch streams
+    if (overlap)
       device.setStream(dataStream);
 
-      o_sBuf.copyTo(sBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
+    // assemble mpi send buffer by gathering halo nodes
+    gatherHalo->Apply(o_sBuf, o_v);
 
-      device.setStream(currentStream);
+    //if not overlapping, wait for kernel to finish on default stream
+    if (!overlap)
+      device.finish();
+
+    if (!gpu_aware) {
+      //switch streams to overlap data movement
+      device.setStream(dataStream);
+      o_sBuf.copyTo(sBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
     }
+
+    device.setStream(currentStream);
   }
 }
 
 
-void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware){
+void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
 
   const size_t Nbytes = sizeof(dfloat);
   occa::device &device = platform.device;
 
   occa::stream currentStream = device.getStream();
 
-  if (gpu_aware){
+  char *sBufPtr, *gBufPtr;
+  if (gpu_aware) { //device pointer
+    sBufPtr = (char*)o_sBuf.ptr();
+    gBufPtr = (char*)o_gBuf.ptr();
+  } else { //host pointer
+    sBufPtr = (char*)sBuf;
+    gBufPtr = (char*)gBuf;
+  }
 
-    //post recvs
-    for (int partner=0;partner<Npartners;partner++) {
-      MPI_Irecv((o_sBuf+sOffsets[partner+1]*Nbytes).ptr(),
-                sCounts[partner+1], MPI_DFLOAT,
-                downstreamPartners[partner],
-                downstreamPartners[partner],
-                comm, requests+partner);
-    }
-
-    MPI_Waitall(Npartners, requests, statuses);
-
+  if (gatherHalo->Nrows) {
+    //synchronize data stream to ensure the send buffer is ready
     device.setStream(dataStream);
+    device.finish();
+  }
 
-    if (rank==0) {
-      //apply a gather scatter on the root rank
+  //post recvs
+  for (int partner=0;partner<Npartners;partner++) {
+    MPI_Irecv(sBufPtr+sOffsets[partner+1]*Nbytes,
+              sCounts[partner+1], MPI_DFLOAT,
+              downstreamPartners[partner],
+              downstreamPartners[partner],
+              comm, requests+partner);
+  }
+
+  MPI_Waitall(Npartners, requests, statuses);
+
+  //the intermediate kernels are always overlapped with the default stream
+  device.setStream(dataStream);
+
+  if (rank==0) {
+    //apply a gather scatter on the root rank
+    if (gpu_aware) {
       rootGS->Apply(o_sBuf);
       device.finish();
     } else {
+      rootGS->Apply((dfloat*)sBuf);
+    }
+  } else {
+    if (gpu_aware) {
       //partially gather nodes on this rank
       partialGather->Apply(o_gBuf, o_sBuf);
       device.finish();
+    } else {
+      partialGather->Apply((dfloat*)gBuf, (dfloat*)sBuf);
+    }
 
-      //send upstream
-      MPI_Send(o_gBuf.ptr(), Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
+    //send upstream
+    MPI_Send(gBufPtr, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
 
-      //recv gathered results
-      MPI_Recv(o_gBuf.ptr(), Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
+    //recv gathered results
+    MPI_Recv(gBufPtr, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
 
-      //scatter back to recieved ordering
+    //scatter back to recieved ordering
+    if (gpu_aware) {
       partialScatter->Apply(o_sBuf, o_gBuf);
       device.finish();
-    }
-
-    //post sends downstream
-    for (int partner=0;partner<Npartners;partner++) {
-      MPI_Isend((o_sBuf+sOffsets[partner+1]*Nbytes).ptr(),
-                sCounts[partner+1], MPI_DFLOAT,
-                downstreamPartners[partner],
-                downstreamPartners[partner],
-                comm, requests+partner);
-    }
-    MPI_Waitall(Npartners, requests, statuses);
-
-    if (scatterHalo->Ncols) {
-      scatterHalo->Apply(o_v, o_sBuf);
-    }
-
-    device.finish();
-    device.setStream(currentStream);
-
-  } else { // not gpu-aware
-
-    if (gatherHalo->Nrows) {
-      //synchronize data stream to ensure the send buffer has arrived on host
-      device.setStream(dataStream);
-      device.finish();
-      device.setStream(currentStream);
-    }
-    //post recvs
-    for (int partner=0;partner<Npartners;partner++) {
-      MPI_Irecv((char*)sBuf+sOffsets[partner+1]*Nbytes,
-                sCounts[partner+1], MPI_DFLOAT,
-                downstreamPartners[partner],
-                downstreamPartners[partner],
-                comm, requests+partner);
-    }
-
-    MPI_Waitall(Npartners, requests, statuses);
-
-    if (rank==0) {
-      //apply a gather scatter on the root rank
-      rootGS->Apply((dfloat*)sBuf);
     } else {
-      //partially gather nodes on this rank
-      partialGather->Apply((dfloat*)gBuf, (dfloat*)sBuf);
-
-      //send upstream
-      MPI_Send(gBuf, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
-
-      //recv gathered results
-      MPI_Recv(gBuf, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
-
-      //scatter back to recieved ordering
       partialScatter->Apply((dfloat*)sBuf, (dfloat*)gBuf);
     }
+  }
 
-    //post sends downstream
-    for (int partner=0;partner<Npartners;partner++) {
-      MPI_Isend((char*)sBuf+sOffsets[partner+1]*Nbytes,
-                sCounts[partner+1], MPI_DFLOAT,
-                downstreamPartners[partner],
-                downstreamPartners[partner],
-                comm, requests+partner);
-    }
-    MPI_Waitall(Npartners, requests, statuses);
+  //post sends downstream
+  for (int partner=0;partner<Npartners;partner++) {
+    MPI_Isend(sBufPtr+sOffsets[partner+1]*Nbytes,
+              sCounts[partner+1], MPI_DFLOAT,
+              downstreamPartners[partner],
+              downstreamPartners[partner],
+              comm, requests+partner);
+  }
+  MPI_Waitall(Npartners, requests, statuses);
 
-    // if we recieved anything via MPI, gather the recv buffer and scatter
-    // it back to to original vector
-    if (scatterHalo->Ncols) {
-
-      device.setStream(dataStream);
-
+  if (scatterHalo->Ncols) {
+    if (!gpu_aware) {
       // copy recv back to device
+      device.setStream(dataStream);
       o_sBuf.copyFrom(sBuf, scatterHalo->Ncols*Nbytes, 0, "async: true");
+      if (!overlap) device.finish(); //wait for transfer to finish if not overlapping halo kernel
+    }
 
-      device.finish();
+    //if overlapping the halo kernels, switch streams
+    if (overlap) {
+      device.setStream(dataStream);
+    } else {
       device.setStream(currentStream);
+    }
 
-      scatterHalo->Apply(o_v, o_sBuf);
+    scatterHalo->Apply(o_v, o_sBuf);
+
+    if (overlap) { //if overlapping halo kernels wait for kernel to finish
+      device.finish();
     }
   }
+
+  device.setStream(currentStream);
 }
 
 // compare on baseId then rank then by localId

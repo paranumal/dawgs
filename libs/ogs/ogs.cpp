@@ -34,31 +34,33 @@ namespace ogs {
 
 void ogs_t::GatherScatterStart(occa::memory& o_v,
                                const ogs_method method,
-                               const bool gpu_aware){
+                               const bool gpu_aware,
+                               const bool overlap){
   //prepare MPI exchange
   if (method == ogs_all_reduce)
-    exchange_ar->Start(o_v, gpu_aware);
+    exchange_ar->Start(o_v, gpu_aware, overlap);
   else if (method == ogs_pairwise)
-    exchange_pw->Start(o_v, gpu_aware);
+    exchange_pw->Start(o_v, gpu_aware, overlap);
   else
-    exchange_cr->Start(o_v, gpu_aware);
+    exchange_cr->Start(o_v, gpu_aware, overlap);
 }
 
 
 void ogs_t::GatherScatterFinish(occa::memory& o_v,
                                 const ogs_method method,
-                                const bool gpu_aware){
+                                const bool gpu_aware,
+                                const bool overlap){
 
   //queue local gs operation
   gsLocalS->Apply(o_v);
 
   //finish MPI exchange
   if (method == ogs_all_reduce)
-    exchange_ar->Finish(o_v, gpu_aware);
+    exchange_ar->Finish(o_v, gpu_aware, overlap);
   else if (method == ogs_pairwise)
-    exchange_pw->Finish(o_v, gpu_aware);
+    exchange_pw->Finish(o_v, gpu_aware, overlap);
   else
-    exchange_cr->Finish(o_v, gpu_aware);
+    exchange_cr->Finish(o_v, gpu_aware, overlap);
 }
 
 } //namespace ogs

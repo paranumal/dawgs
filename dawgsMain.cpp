@@ -69,13 +69,13 @@ void factor3(const int size, int &size_x, int &size_y, int &size_z) {
 void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
                      dfloat *qtest, dfloat *qcheck,
                      ogs::ogs_t &ogs, const ogs::ogs_method method,
-                     bool gpu_aware, MPI_Comm comm) {
+                     bool gpu_aware, bool overlap, MPI_Comm comm) {
   int rank = ogs.platform.rank;
 
   o_q.copyFrom(q);
 
   //call a gatherScatter operation
-  ogs.GatherScatter(o_q, method, gpu_aware);
+  ogs.GatherScatter(o_q, method, gpu_aware, overlap);
 
   //copy back to host
   o_q.copyTo(qtest);
@@ -95,9 +95,12 @@ void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
       std::cout << "Crystal Router Method ";
 
     if (gpu_aware)
-      std::cout << "GPU-aware ";
+      std::cout << ", GPU-aware ";
 
-    std::cout << "Error = " << errG << std::endl;
+    if (overlap)
+      std::cout << ", Halo Kernel Overlap ";
+
+    std::cout << ", Error = " << errG << std::endl;
   }
 }
 
@@ -105,7 +108,7 @@ void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
 void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
                      occa::memory &o_q, ogs::ogs_t &ogs,
                      const ogs::ogs_method method,
-                     bool gpu_aware, MPI_Comm comm) {
+                     bool gpu_aware, bool overlap, MPI_Comm comm) {
 
   int rank = ogs.platform.rank;
   int size = ogs.platform.size;
@@ -113,7 +116,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   int Nwarmup = 10;
   MPI_Barrier(comm);
   for (int n=0;n<Nwarmup;n++) {
-    ogs.GatherScatter(o_q, method, gpu_aware);
+    ogs.GatherScatter(o_q, method, gpu_aware, overlap);
     ogs.platform.device.finish();
   }
 
@@ -124,7 +127,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   starttime = MPI_Wtime();
 
   for (int n=0;n<n_iter;n++) {
-    ogs.GatherScatter(o_q, method, gpu_aware);
+    ogs.GatherScatter(o_q, method, gpu_aware, overlap);
     ogs.platform.device.finish();
   }
 
@@ -143,7 +146,10 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
       std::cout << "CR ";
 
     if (gpu_aware)
-      std::cout << "GPU-aware ";
+      std::cout << ", GPU-aware ";
+
+    if (overlap)
+      std::cout << ", Overlap ";
 
     std::cout << ": Ranks = " << size << ", ";
     std::cout << "Global DOFS = " << Ndofs << ", ";
@@ -318,28 +324,52 @@ int main(int argc, char **argv){
 
     CorrectnessTest(Nelements*Np, q, o_q,
                     qtest, qcheck,
-                    ogs, ogs::ogs_all_reduce, false, comm);
+                    ogs, ogs::ogs_all_reduce, false, false, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
                     qtest, qcheck,
-                    ogs, ogs::ogs_pairwise, false, comm);
+                    ogs, ogs::ogs_pairwise, false, false, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
                     qtest, qcheck,
-                    ogs, ogs::ogs_crystal_router, false, comm);
+                    ogs, ogs::ogs_crystal_router, false, false, comm);
+
+    CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_all_reduce, false, true, comm);
+
+    CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_pairwise, false, true, comm);
+
+    CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_crystal_router, false, true, comm);
 
     if (gpu_aware) {
       CorrectnessTest(Nelements*Np, q, o_q,
                     qtest, qcheck,
-                    ogs, ogs::ogs_all_reduce, true, comm);
+                    ogs, ogs::ogs_all_reduce, true, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
                       qtest, qcheck,
-                      ogs, ogs::ogs_pairwise, true, comm);
+                      ogs, ogs::ogs_pairwise, true, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
                       qtest, qcheck,
-                      ogs, ogs::ogs_crystal_router, true, comm);
+                      ogs, ogs::ogs_crystal_router, true, false, comm);
+
+      CorrectnessTest(Nelements*Np, q, o_q,
+                    qtest, qcheck,
+                    ogs, ogs::ogs_all_reduce, true, true, comm);
+
+      CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck,
+                      ogs, ogs::ogs_pairwise, true, true, comm);
+
+      CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck,
+                      ogs, ogs::ogs_crystal_router, true, true, comm);
     }
 
   } else {
@@ -350,23 +380,45 @@ int main(int argc, char **argv){
     int Nlocal = Np*Nelements;
 
     //All to all
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, comm);
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, false, comm);
 
     //Pairwise
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, comm);
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, false, comm);
 
     //Crystal Router
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, comm);
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, false, comm);
+
+    //With Halo kernel overlap:
+
+    //All to all
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, true, comm);
+
+    //Pairwise
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, true, comm);
+
+    //Crystal Router
+    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, true, comm);
 
     if (gpu_aware) {
       //All to all
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, comm);
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, false, comm);
 
       //Pairwise
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, comm);
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, false, comm);
 
       //Crystal Router
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, comm);
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, false, comm);
+
+      //With Halo kernel overlap:
+
+      //All to all
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, true, comm);
+
+      //Pairwise
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, true, comm);
+
+      //Crystal Router
+      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, true, comm);
     }
   }
 

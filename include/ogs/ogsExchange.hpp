@@ -37,8 +37,8 @@ namespace ogs {
 //virtual base class to perform MPI exchange of gatherScatter
 class ogsExchange_t {
 public:
-  virtual void Start(occa::memory &o_v, bool ga)=0;
-  virtual void Finish(occa::memory &o_v, bool ga)=0;
+  virtual void Start(occa::memory &o_v, bool ga, bool overlap)=0;
+  virtual void Finish(occa::memory &o_v, bool ga, bool overlap)=0;
 
   virtual void reallocOccaBuffer(size_t Nbytes)=0;
 };
@@ -73,8 +73,8 @@ public:
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(occa::memory &o_v, bool ga);
-  virtual void Finish(occa::memory &o_v, bool ga);
+  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
 
   virtual void reallocOccaBuffer(size_t Nbytes);
 
@@ -115,8 +115,8 @@ public:
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(occa::memory &o_v, bool ga);
-  virtual void Finish(occa::memory &o_v, bool ga);
+  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
 
   virtual void reallocOccaBuffer(size_t Nbytes);
 };
@@ -158,8 +158,8 @@ public:
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(occa::memory &o_v, bool ga);
-  virtual void Finish(occa::memory &o_v, bool ga);
+  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
 
   virtual void reallocOccaBuffer(size_t Nbytes);
 };

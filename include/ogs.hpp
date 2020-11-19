@@ -219,16 +219,16 @@ public:
 
   // Synchronous device buffer versions
   void GatherScatter    (occa::memory&  o_v, const ogs_method method,
-                         const bool gpu_aware){
-    GatherScatterStart (o_v, method, gpu_aware);
-    GatherScatterFinish(o_v, method, gpu_aware);
+                         const bool gpu_aware, const bool overlap){
+    GatherScatterStart (o_v, method, gpu_aware, overlap);
+    GatherScatterFinish(o_v, method, gpu_aware, overlap);
   }
 
   // Asynchronous device buffer versions
   void GatherScatterStart     (occa::memory&  o_v, const ogs_method method,
-                               const bool gpu_aware);
+                               const bool gpu_aware, const bool overlap);
   void GatherScatterFinish    (occa::memory&  o_v, const ogs_method method,
-                               const bool gpu_aware);
+                               const bool gpu_aware, const bool overlap);
 
 private:
   ogsGather_t *gatherLocal=nullptr;
