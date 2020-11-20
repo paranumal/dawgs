@@ -78,8 +78,8 @@ while true; do
     -m|--mode)
         mode=${2}
         shift 2 ;;
-    -p|--mode)
-        mode=${2}
+    -p)
+        p=${2}
         shift 2 ;;
     --) shift ; break ;;
     *)  echo "Unexpected command line parameter received; aborting";
@@ -94,6 +94,45 @@ if ! [[ "$mode" =~ ^(Serial|OpenMP|CUDA|HIP|OpenCL)$ ]]; then
   exit 1
 fi
 
+S_low=2
+S_step=2
+S_high=20
+if [[ $p -eq 1 ]]; then
+  S_low=2
+  S_step=8
+  S_high=122
+elif [[ $p -eq 2 ]]; then
+  S_low=2
+  S_step=4
+  S_high=102
+elif [[ $p -eq 3 ]]; then
+  S_low=2
+  S_step=4
+  S_high=82
+elif [[ $p -eq 4 ]]; then
+  S_low=2
+  S_step=4
+  S_high=62
+elif [[ $p -eq 5 ]]; then
+  S_low=2
+  S_step=4
+  S_high=54
+elif [[ $p -eq 6 ]]; then
+  S_low=2
+  S_step=2
+  S_high=38
+elif [[ $p -eq 7 ]]; then
+  S_low=2
+  S_step=2
+  S_high=28
+elif [[ $p -eq 8 ]]; then
+  S_low=2
+  S_step=2
+  S_high=28
+fi
+
+
+
 # #################################################
 # Run
 # #################################################
@@ -101,7 +140,7 @@ fi
 #options for MPI
 # mpi_opts="-mca pml ucx -mca btl ^uct"
 
-dawgs_opts="-m ${mode}"
+dawgs_opts="-m ${mode} -p ${p}"
 if [[ "${gpu_aware}" == true ]]; then
   dawgs_opts="-ga ${dawgs_opts}"
 fi
@@ -111,13 +150,14 @@ fi
 
 make -j `nproc`
 
-for S in `seq 2 4 72`
+for S in `seq ${S_low} ${S_step} ${S_high}`
 do
     #echo "Problem size:" $S"x"$S"x"$S
 
     #mpi run
     mpirun -np $n ${mpi_opts} dawgsMain -nx $S -ny $S -nz $S ${dawgs_opts}
-
+    
     #slurm run
-    #srun -N $N -n $n dawgsMain -nx $S -ny $S -nz $S ${dawgs_opts}
+
+    #srun -N $N -n $n -p amdMI60 dawgsMain -nx $S -ny $S -nz $S ${dawgs_opts}
 done
