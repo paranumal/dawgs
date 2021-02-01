@@ -165,36 +165,6 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
   device.setStream(currentStream);
 }
 
-// compare on baseId then rank then by localId
-static int compareBaseId(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(abs(fa->baseId) < abs(fb->baseId)) return -1; //group by abs(baseId)
-  if(abs(fa->baseId) > abs(fb->baseId)) return +1;
-
-  if(fa->baseId > fb->baseId) return -1; //positive ids first
-  if(fa->baseId < fb->baseId) return +1;
-
-  if(fa->localId < fb->localId) return -1; //sort by local id
-  if(fa->localId > fb->localId) return +1;
-
-  return 0;
-}
-
-// compare on localId
-static int compareLocalId(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(fa->localId < fb->localId) return -1;
-  if(fa->localId > fb->localId) return +1;
-
-  return 0;
-}
-
 /*
  *Crystal router performs the needed MPI communcation via a binary tree
  * traversal. The binary tree takes the following form:
@@ -377,7 +347,13 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
   // send to our upstream
 
   // sort based on baseId (putting positive baseIds first) then by localId
-  qsort(sNodes, sTotal, sizeof(parallelNode_t), compareBaseId);
+  std::sort(sNodes, sNodes+sTotal,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
 
   gTotal=0; //count how many unique nodes
   Nsend=0;  //count how many nodes we should recv from upstream
@@ -397,7 +373,10 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
   }
 
   // sort the list back to local id ordering
-  qsort(sNodes, sTotal, sizeof(parallelNode_t), compareLocalId);
+  std::sort(sNodes, sNodes+sTotal,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              return a.localId < b.localId;
+            });
 
   dlong *gIndexMap = (dlong*) malloc(gTotal*sizeof(dlong));
   for (dlong i=0;i<gTotal;i++) gIndexMap[i] = -1; //initialize map

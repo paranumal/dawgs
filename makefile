@@ -115,7 +115,10 @@ OBJS=$(SRC:.cpp=.o)
 
 all: dawgsMain
 
-libp_libs:
+${OCCA_DIR}/lib/libocca.so:
+	${MAKE} -C ${OCCA_DIR}
+
+libp_libs: ${OCCA_DIR}/lib/libocca.so
 ifneq (,${verbose})
 	${MAKE} -C ${LIBP_LIBS_DIR} $(DAWGS_LIBP_LIBS) verbose=${verbose}
 else
@@ -159,11 +162,12 @@ clean-libs: clean
 
 clean-kernels: clean-libs
 # 	$(shell ${OCCA_DIR}/bin/occa clear all -y)
-	rm -rf ~/.occa/
+	rm -rf ${LIBP_DIR}/.occa
 
 realclean: clean
 	${MAKE} -C ${LIBP_LIBS_DIR} clean
 	${MAKE} -C ${GS_DIR} clean
+	${MAKE} -C ${OCCA_DIR} clean
 
 help:
 	$(info $(value DAWGS_HELP_MSG))

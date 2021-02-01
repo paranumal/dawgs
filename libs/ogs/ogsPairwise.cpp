@@ -133,21 +133,6 @@ void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
   device.setStream(currentStream);
 }
 
-// compare on rank then local id
-static int compareRank(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(fa->rank < fb->rank) return -1;
-  if(fa->rank > fb->rank) return +1;
-
-  if(fa->localId < fb->localId) return -1; //sort by local id
-  if(fa->localId > fb->localId) return +1;
-
-  return 0;
-}
-
 ogsPairwise_t::ogsPairwise_t(dlong recvN,
                              parallelNode_t* recvNodes,
                              dlong NgatherLocal,
@@ -179,7 +164,13 @@ ogsPairwise_t::ogsPairwise_t(dlong recvN,
   }
 
   // sort the list by rank to the order where they should recieved by MPI_Allgatherv
-  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareRank);
+  std::sort(recvNodes, recvNodes+recvN,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(a.rank < b.rank) return true; //group by rank
+              if(a.rank > b.rank) return false;
+
+              return a.localId < b.localId; //then order by localId
+            });
 
   //make mpi allgatherv counts and offsets
   int *mpiSendCounts = (int*) calloc(size, sizeof(int));

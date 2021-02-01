@@ -96,6 +96,8 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
              "Check correctness of results using gslib",
              {"TRUE", "FALSE"});
 
+
+
   parseSettings(argc, argv);
 }
 

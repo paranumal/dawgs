@@ -31,66 +31,6 @@ SOFTWARE.
 
 namespace ogs {
 
-// compare on rank then local id
-static int compareRank(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(fa->rank < fb->rank) return -1;
-  if(fa->rank > fb->rank) return +1;
-
-  if(fa->localId < fb->localId) return -1; //sort by local id
-  if(fa->localId > fb->localId) return +1;
-
-  return 0;
-}
-
-// compare on destRank
-static int compareDestRank(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(fa->destRank < fb->destRank) return -1;
-  if(fa->destRank > fb->destRank) return +1;
-
-  return 0;
-}
-
-// compare on baseId then rank then by localId
-static int compareBaseId(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(abs(fa->baseId) < abs(fb->baseId)) return -1; //group by abs(baseId)
-  if(abs(fa->baseId) > abs(fb->baseId)) return +1;
-
-  if(fa->baseId > fb->baseId) return -1; //positive ids first
-  if(fa->baseId < fb->baseId) return +1;
-
-  if(fa->rank < fb->rank) return -1; //sort by rank
-  if(fa->rank > fb->rank) return +1;
-
-  if(fa->localId < fb->localId) return -1; //sort by local id
-  if(fa->localId > fb->localId) return +1;
-
-  return 0;
-}
-
-// compare on localId
-static int compareLocalId(const void *a, const void *b){
-
-  parallelNode_t *fa = (parallelNode_t*) a;
-  parallelNode_t *fb = (parallelNode_t*) b;
-
-  if(fa->localId < fb->localId) return -1;
-  if(fa->localId > fb->localId) return +1;
-
-  return 0;
-}
-
 void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
 
   //release resources if this ogs was setup before
@@ -125,7 +65,13 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   }
 
   // sort based on baseId (putting positive baseIds first), then localId
-  qsort(nodes, Nids, sizeof(parallelNode_t), compareBaseId);
+  std::sort(nodes, nodes+Nids,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
 
   //count how many unique global Ids we have on this rank, and flag
   // baseId groups as either 1 or -1 based on whether there is a
@@ -168,7 +114,10 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   }
 
   // sort based on destination rank
-  qsort(sendNodes, NbaseIds, sizeof(parallelNode_t), compareDestRank);
+  std::sort(sendNodes, sendNodes+NbaseIds,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              return a.destRank < b.destRank;
+            });
 
   //count number of ids we're sending
   int *sendCounts = (int*) calloc(size, sizeof(int));
@@ -201,7 +150,13 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   free(sendNodes);
 
   // sort based on base ids (putting positive ids first) then rank, then local id
-  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareBaseId);
+  std::sort(recvNodes, recvNodes+recvN,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
 
   // We now have a collection of nodes associated with some subset of all global Ids
   // Our list is sorted by baseId to group nodes with the same globalId together
@@ -322,7 +277,13 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   free(recvOffsets);
 
   // sort based on baseId
-  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareBaseId);
+  std::sort(recvNodes, recvNodes+recvN,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
 
   // We now have a list of parallelNodes which have been flagged as shared.
   // For each node, we also have a list of what ranks that node
@@ -331,10 +292,9 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   for (dlong n=0;n<recvN;n++) { //loop through nodes needed for gathering halo nodes
     if (n==0 || abs(recvNodes[n].baseId)!=abs(recvNodes[n-1].baseId)) { //for each baseId group
       //Find the node in this baseId group which was orignally populated by this rank
-      dlong origin=n;
-      while (recvNodes[origin].rank!=rank) origin++;
+      while (recvNodes[n].rank!=rank) n++;
 
-      dlong id = recvNodes[origin].newId; //get the group index
+      const dlong id = recvNodes[n].newId; //get the group index
 
       //for each local node in this baseId group
       const dlong start = baseIdOffsets[id];
@@ -386,13 +346,25 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
                                gatherHalo, indexMap, comm, platform);
 
   // Need this to make the back-to-back setups work
-  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareBaseId);
+  std::sort(recvNodes, recvNodes+recvN,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
 
   exchange_pw = new ogsPairwise_t(recvN, recvNodes, Nlocal,
                                gatherHalo, indexMap, comm, platform);
 
   // Need this to make the back-to-back setups work
-  qsort(recvNodes, recvN, sizeof(parallelNode_t), compareBaseId);
+  std::sort(recvNodes, recvNodes+recvN,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
 
   exchange_cr = new ogsCrystalRouter_t(recvN, recvNodes, Nlocal,
                                gatherHalo, indexMap, comm, platform);
@@ -432,7 +404,10 @@ void ogs_t::LocalSetup(const dlong Nids, parallelNode_t* nodes,
   //                           +gatherHalo->Nrows
 
   // sort the list back to local id ordering
-  qsort(nodes, Nids, sizeof(parallelNode_t), compareLocalId);
+  std::sort(nodes, nodes+Nids,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              return a.localId < b.localId;
+            });
 
   for (dlong i=0;i<NbaseIds;i++) indexMap[i] = -1; //initialize map
 

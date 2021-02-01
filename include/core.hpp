@@ -32,6 +32,7 @@ SOFTWARE.
 #include <string>
 #include <math.h>
 #include <stdlib.h>
+#include <algorithm>
 #include "types.h"
 #include "utils.hpp"
 
