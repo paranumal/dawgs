@@ -337,6 +337,20 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   hlong NgatherLocal = (hlong) Ngather;
   MPI_Allreduce(&NgatherLocal, &(NgatherGlobal), 1, MPI_HLONG, MPI_SUM, comm);
 
+  //use the index map to number recvNodes according to where they are in the gathered halo buffer
+  dlong id=0;
+  for (dlong n=0;n<recvN;n++) {
+    if (n==0 || abs(recvNodes[n].baseId)!=abs(recvNodes[n-1].baseId)) { //for each baseId group
+      //Find the node in this baseId group which was populated by this rank
+      dlong origin=n;
+      while (recvNodes[origin].rank!=rank) origin++;
+
+      //map the baseId index to the coalesced ordering
+      id = indexMap[recvNodes[origin].newId] - Nlocal;
+    }
+    recvNodes[n].localId = id; //record the coalesced index for this baseId
+  }
+
   // At this point, we've setup gs operators to gather/scatter the purely local nodes,
   // and gather/scatter the shared halo nodes to/from a coalesced ordering. We now
   // need gs operators to scatter/gather the coalesced halo nodes to/from the expected
@@ -345,26 +359,8 @@ void ogs_t::Setup(dlong _N, hlong *ids, MPI_Comm _comm, int verbose){
   exchange_ar = new ogsAllToAll_t(recvN, recvNodes, Nlocal,
                                gatherHalo, indexMap, comm, platform);
 
-  // Need this to make the back-to-back setups work
-  std::sort(recvNodes, recvNodes+recvN,
-            [](const parallelNode_t& a, const parallelNode_t& b) {
-              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
-              if(abs(a.baseId) > abs(b.baseId)) return false;
-
-              return a.baseId < b.baseId; //positive ids first
-            });
-
   exchange_pw = new ogsPairwise_t(recvN, recvNodes, Nlocal,
                                gatherHalo, indexMap, comm, platform);
-
-  // Need this to make the back-to-back setups work
-  std::sort(recvNodes, recvNodes+recvN,
-            [](const parallelNode_t& a, const parallelNode_t& b) {
-              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
-              if(abs(a.baseId) > abs(b.baseId)) return false;
-
-              return a.baseId < b.baseId; //positive ids first
-            });
 
   exchange_cr = new ogsCrystalRouter_t(recvN, recvNodes, Nlocal,
                                gatherHalo, indexMap, comm, platform);

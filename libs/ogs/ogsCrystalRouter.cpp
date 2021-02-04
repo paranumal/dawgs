@@ -45,7 +45,7 @@ void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware, bool overlap){
       device.setStream(dataStream);
 
     // assemble mpi send buffer by gathering halo nodes
-    gatherHalo->Apply(o_sBuf, o_v);
+    gatherHalo->Apply(o_haloBuf, o_v);
 
     //if not overlapping, wait for kernel to finish on default stream
     if (!overlap)
@@ -54,7 +54,7 @@ void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware, bool overlap){
     if (!gpu_aware) {
       //switch streams to overlap data movement
       device.setStream(dataStream);
-      o_sBuf.copyTo(sBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
+      o_haloBuf.copyTo(haloBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
     }
 
     device.setStream(currentStream);
@@ -69,13 +69,13 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
 
   occa::stream currentStream = device.getStream();
 
-  char *sBufPtr, *gBufPtr;
+  char *sBufPtr, *rBufPtr;
   if (gpu_aware) { //device pointer
-    sBufPtr = (char*)o_sBuf.ptr();
-    gBufPtr = (char*)o_gBuf.ptr();
+    sBufPtr = (char*)o_sendBuf.ptr();
+    rBufPtr = (char*)o_recvBuf.ptr();
   } else { //host pointer
-    sBufPtr = (char*)sBuf;
-    gBufPtr = (char*)gBuf;
+    sBufPtr = (char*)sendBuf;
+    rBufPtr = (char*)recvBuf;
   }
 
   if (gatherHalo->Nrows) {
@@ -84,67 +84,50 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
     device.finish();
   }
 
-  //post recvs
-  for (int partner=0;partner<Npartners;partner++) {
-    MPI_Irecv(sBufPtr+sOffsets[partner+1]*Nbytes,
-              sCounts[partner+1], MPI_DFLOAT,
-              downstreamPartners[partner],
-              downstreamPartners[partner],
-              comm, requests+partner);
-  }
+  //zero extra section in halo buffer
+  for (int n=Nhalo;n<NhaloExt;n++)
+    ((dfloat*)haloBuf)[n] = 0.0;
 
-  MPI_Waitall(Npartners, requests, statuses);
+  for (int k=0;k<Nlevels;k++) {
 
-  //the intermediate kernels are always overlapped with the default stream
-  device.setStream(dataStream);
+    //post recvs
+    if (levels[k].Nmsg>0)
+      MPI_Irecv(rBufPtr, levels[k].Nrecv0, MPI_DFLOAT,
+                levels[k].partner, levels[k].partner, comm, request+1);
+    if (levels[k].Nmsg==2)
+      MPI_Irecv(rBufPtr+levels[k].Nrecv0*Nbytes,
+                levels[k].Nrecv1, MPI_DFLOAT,
+                rank-1, rank-1, comm, request+2);
 
-  if (rank==0) {
-    //apply a gather scatter on the root rank
-    if (gpu_aware) {
-      rootGS->Apply(o_sBuf);
-      device.finish();
-    } else {
-      rootGS->Apply((dfloat*)sBuf);
-    }
-  } else {
-    if (gpu_aware) {
-      //partially gather nodes on this rank
-      partialGather->Apply(o_gBuf, o_sBuf);
-      device.finish();
-    } else {
-      partialGather->Apply((dfloat*)gBuf, (dfloat*)sBuf);
+    //assemble send buffer
+    for (int n=0;n<levels[k].Nsend;n++) {
+      ((dfloat*)sBufPtr)[n] = ((dfloat*)haloBuf)[levels[k].sendIds[n]];
     }
 
-    //send upstream
-    MPI_Send(gBufPtr, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm);
+    //post send
+    MPI_Isend(sBufPtr, levels[k].Nsend, MPI_DFLOAT,
+              levels[k].partner, rank, comm, request+0);
 
-    //recv gathered results
-    MPI_Recv(gBufPtr, Nsend, MPI_DFLOAT, upstreamPartner, rank, comm, MPI_STATUS_IGNORE);
+    MPI_Waitall(levels[k].Nmsg+1, request, status);
 
-    //scatter back to recieved ordering
-    if (gpu_aware) {
-      partialScatter->Apply(o_sBuf, o_gBuf);
-      device.finish();
-    } else {
-      partialScatter->Apply((dfloat*)sBuf, (dfloat*)gBuf);
+    //Scatter the recv buffer into the haloBuffer
+    if (levels[k].Nmsg>0) {
+      for (int n=0;n<levels[k].Nrecv0;n++) {
+        ((dfloat*)haloBuf)[levels[k].recvIds0[n]] += ((dfloat*)rBufPtr)[n];
+      }
+    }
+    if (levels[k].Nmsg==2) {
+      for (int n=0;n<levels[k].Nrecv1;n++) {
+        ((dfloat*)haloBuf)[levels[k].recvIds1[n]] += ((dfloat*)rBufPtr)[n+levels[k].Nrecv0];
+      }
     }
   }
-
-  //post sends downstream
-  for (int partner=0;partner<Npartners;partner++) {
-    MPI_Isend(sBufPtr+sOffsets[partner+1]*Nbytes,
-              sCounts[partner+1], MPI_DFLOAT,
-              downstreamPartners[partner],
-              downstreamPartners[partner],
-              comm, requests+partner);
-  }
-  MPI_Waitall(Npartners, requests, statuses);
 
   if (scatterHalo->Ncols) {
     if (!gpu_aware) {
       // copy recv back to device
       device.setStream(dataStream);
-      o_sBuf.copyFrom(sBuf, scatterHalo->Ncols*Nbytes, 0, "async: true");
+      o_haloBuf.copyFrom(haloBuf, scatterHalo->Ncols*Nbytes, 0, "async: true");
       if (!overlap) device.finish(); //wait for transfer to finish if not overlapping halo kernel
     }
 
@@ -155,7 +138,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
       device.setStream(currentStream);
     }
 
-    scatterHalo->Apply(o_v, o_sBuf);
+    scatterHalo->Apply(o_v, o_haloBuf);
 
     if (overlap) { //if overlapping halo kernels wait for kernel to finish
       device.finish();
@@ -166,72 +149,39 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
 }
 
 /*
- *Crystal router performs the needed MPI communcation via a binary tree
- * traversal. The binary tree takes the following form:
- *                        0
- *                       / \
- *                      /   \
- *                     /     \
- *                    /       \
- *                   /         \
- *                  /           \
- *                 /             \
- *                /               \
- *               /                 \
- *              /                   \
- *             /                     \
- *            0                       1
- *           / \                     / \
- *          /   \                   /   \
- *         /     \                 /     \
- *        /       \               /       \
- *       /         \             /         \
- *      0           2           1           3
- *     / \         / \         / \         / \
- *    /   \       /   \       /   \       /   \
- *   0     4     2     6     1     5     3     7
- *  / \   / \   / \   / \   / \   / \   / \   / \
- * 0   8 4  12 2  10 6  14 1   9 5  13 3  11 7  15
+ *Crystal Router performs the needed MPI communcation via recursive
+ * folding of a hypercube. Consider a set of NP ranks. We select a
+ * pivot point n_half=(NP+1)/2, and pair all ranks r<n_half (called
+ * lo half) the with ranks r>=n_half (called the hi half), as follows
  *
- *                    *   *   *
+ *                0 <--> NP-1
+ *                1 <--> NP-2
+ *                2 <--> NP-3
+ *                  * * *
+ *         n_half-2 <--> NP-n_half+1
+ *         n_half-1 <--> NP-n_half
  *
- * For example, suppose a node is shared between ranks 5, 8, & 15.
- * The values at that node will begin in ranks 5, 8, & 15 and be sent up
- * the levels of the binary tree. When rank 1 recieves two of these values
- * from rank 5 and rank 3 (originating in rank 5 and rank 15, respectively)
- * rank 1 will perform a partial gather of the value before sending the
- * result to rank 0, which will have also recieved the third value from
- * rank 8. Rank 0 completes the gather, and the result is scattered back to
- * ranks 8, 5, and 15 (the latter 2 being sent via rank 1 then 5, and 1, 3,
- * 7, and finally 15, respectively)
+ * The communication can then be summarized thusly: if a rank in the lo
+ * half has data needed by *any* rank in the hi half, it sends this data
+ * to its hi partner, and analogously for ranks in the hi half. Each rank
+ * therefore sends/receives a single message to/from its partner.
  *
- * In general, each rank has a set of 'downstream' partners, i.e. the nodes
- * which connect to it from lower levels of the binary tree, and each rank,
- * except 0, has a single upstream partner, i.e. the rank to which it connects
- * to above it in the binary tree. To perform the Crystal Router exchange, each
- * rank receives a set of node values from each of its downstream partners. The
- * rank then gathers any repeated nodes and sets up a send buffer of node values
- * the are needed to send to thier upstream partner. The rank then waits to
- * recieve completely gathered nodes back from its upstream neighbor, scatters
- * the nodes recieved to send to each downstream partners, and sends those
- * values before scattering any local result back to the output array.
+ * The communication then proceeds recursively, applying the same folding
+ * proceedure to the lo and hi halves seperately, and stopping when the size
+ * of the local NP reaches 1.
+ *
+ * In the case where NP is odd, n_half-1 == NP-n_half and rank n_half-1 has
+ * no partner to communicate with. In this case, we assign rank r to the
+ * lo half of ranks, and rank n_half-1 sends its data to rank n_half (and
+ * receives no message, as rank n_half-2 is receiving all rank n_half's data).
+
+ * To perform the Crystal Router exchange, each rank gathers its halo nodes to
+ * a coalesced buffer. At each step in the crystal router, a send buffer is
+ * gathered from this buffer and sent to the rank's partner. Simultaneously, a
+ * buffer is received from the rank's partner. This receive buffer is scattered
+ * and added into the coalesced halo buffer. After all commincation is complete
+ * the halo nodes are scattered back to the output array.
  */
-
-static int LowestCommonAncestor(const int r1, const int r2) {
-  //It is useful to know where a pair of nodes at ranks r1 and r2 will
-  // intersect on their path up the binary tree
-
-  //Since each node travels along the path [rank%2^{k}, rank%2^{k-1}, rank%2^{k-2},...]
-  // in the tree, this amounts to finding the largest K such that
-  // r1 == r2 (mod 2^K), at which point we know that the intersection is r = r1 % 2^K.
-
-  if (r1==r2) return r1;
-
-  int K=1;
-  while (r1%(K<<1) == r2%(K<<1)) K <<=1;
-
-  return (r1%K);
-}
 
 ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
                              parallelNode_t* recvNodes,
@@ -245,109 +195,7 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
   MPI_Comm_rank(comm, &rank);
   MPI_Comm_size(comm, &size);
 
-  gatherHalo = _gatherHalo;
-
-  //Determine our downstream partners and upstream partner
-  // Our downstream partners are the ranks r + 2^k for
-  // where r is this process's rank, and k=k0,k0+1,...
-  // where k0 is smallest integer s.t. 2^k0 > r.
-  // For example, for r=0 k0=1 and rank 0's downstream
-  // partners are 2, 4, 8, 16, ..., and for r=3 k0=2 and
-  // rank 3's downstream partners are 7, 11, 19, ....
-
-  // K0 is smallest power of 2 that is > rank
-  int K0=1;
-  while (K0<=rank) K0<<=1;
-
-  //upstream partner is rank - 2^(k0-1), e.g. 3's upstream is 1
-  upstreamPartner=-1;
-  if (rank>0) upstreamPartner = rank-(K0>>1);
-
-  //count the number of downstream partners
-  Npartners=0;
-  int K=K0;
-  while (rank+K<size) { Npartners++; K<<=1; }
-
-  //record the downstream partners' ranks
-  downstreamPartners = (int*) malloc(Npartners*sizeof(int));
-
-  Npartners=0;
-  K=K0;
-  while (rank+K<size) {
-    downstreamPartners[Npartners++] = rank+K;
-    K<<=1;
-  }
-
-  requests = new MPI_Request[Npartners];
-  statuses = new MPI_Status[Npartners];
-
-  //count how many nodes we should be sending
-  sCounts  = (int*) malloc((Npartners+1)*sizeof(int));
-  sOffsets = (int*) malloc((Npartners+2)*sizeof(int));
-
-  sCounts[0] = gatherHalo->Nrows; //first part of the buffer is the locally gathered halo nodes
-  sOffsets[0] = 0;
-
-  for (int partner=Npartners-1;partner>=0;partner--) {
-    MPI_Recv(sCounts+partner+1, 1, MPI_INT,
-             downstreamPartners[partner], 0,
-             comm, statuses+partner);
-  }
-  for (int i=0;i<Npartners+1;i++) {
-    sOffsets[i+1] = sOffsets[i] + sCounts[i];
-  }
-
-  //total number of nodes after scattering to send buffers
-  sTotal = sOffsets[Npartners+1];
-
-  //make a list of parallelNodes representing the values we
-  // ultimately want
-  parallelNode_t *sNodes = (parallelNode_t* )
-                           malloc(sTotal*sizeof(parallelNode_t));
-
-  //Note that half the ranks at the very bottom of the binary tree have
-  // no downstream partners, and therefore recieved no extra nodes.
-  //These ranks are the first to construct their lists
-
-  for (dlong n=0;n<recvN;n++) { //loop through nodes needed for gathering halo nodes
-    if (n==0 || abs(recvNodes[n].baseId)!=abs(recvNodes[n-1].baseId)) { //for each baseId group
-      //Find the node in this baseId group which was orignally populated by this rank
-      dlong origin=n;
-      while (recvNodes[origin].rank!=rank) origin++;
-
-      const dlong id = recvNodes[origin].newId; //get the group index
-      const dlong sid = indexMap[id]-NgatherLocal;
-
-      sNodes[sid] = recvNodes[n]; //copy a representative from this baseId group
-
-      //loop through this baseId group and find at what rank the node should be fully gathered
-      int k=1, destRank=recvNodes[n].rank;
-      while (n+k<recvN && abs(recvNodes[n+k].baseId)==abs(recvNodes[n].baseId)) {
-        destRank = LowestCommonAncestor(destRank,recvNodes[n+k].rank);
-        k++;
-      }
-      sNodes[sid].destRank = destRank; //record the destination
-    }
-  }
-
-  //Recieve node lists from downStream
-  for (int partner=Npartners-1;partner>=0;partner--) {
-    MPI_Recv(sNodes+sOffsets[partner+1],
-             sCounts[partner+1], MPI_PARALLELNODE_T,
-             downstreamPartners[partner], 0,
-             comm, statuses+partner);
-  }
-
-  for (dlong n=0;n<sTotal;n++) {
-    sNodes[n].localId = n; //reset local index
-  }
-
-  //we now have a list of nodes we should be sending to our downstream partners
-  // build the gather to a compressed node list and build the list we should
-  // send to our upstream
-
-  // sort based on baseId (putting positive baseIds first) then by localId
-  std::sort(sNodes, sNodes+sTotal,
+  std::sort(recvNodes, recvNodes+recvN,
             [](const parallelNode_t& a, const parallelNode_t& b) {
               if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
               if(abs(a.baseId) > abs(b.baseId)) return false;
@@ -355,129 +203,254 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
               return a.baseId < b.baseId; //positive ids first
             });
 
-  gTotal=0; //count how many unique nodes
-  Nsend=0;  //count how many nodes we should recv from upstream
-  for (dlong n=0;n<sTotal;n++) { //loop through nodes needed for gathering halo nodes
-    if (n==0 || abs(sNodes[n].baseId)!=abs(sNodes[n-1].baseId)) { //for each baseId group
-      gTotal++;
+  gatherHalo = _gatherHalo;
+  Nhalo    = _gatherHalo->Nrows;
+  NhaloExt = _gatherHalo->Nrows;
 
-      //count if this baseId group needs to continue upstream
-      if (sNodes[n].destRank<rank) Nsend++;
+  dlong N = recvN;
+  parallelNode_t *nodes = recvNodes;
+
+  //first count how many levels we need
+  Nlevels = 0;
+  int np = size;
+  int np_offset=0;
+  while (np>1) {
+    int np_half = (np+1)/2;
+    int r_half = np_half + np_offset;
+
+    int is_lo = (rank<r_half) ? 1 : 0;
+
+    //Shrink the size of the hypercube
+    if (is_lo) {
+      np = np_half;
+    } else {
+      np -= np_half;
+      np_offset = r_half;
     }
-    sNodes[n].newId=gTotal-1; //record the new ordering
+    Nlevels++;
   }
+  levels = new crLevel[Nlevels];
 
-  //now that we know how many nodes we'll be sending, share that upstream
-  if (upstreamPartner!=-1) {
-    MPI_Send(&Nsend, 1, MPI_INT, upstreamPartner, 0, comm);
-  }
+  //Now build the levels
+  Nlevels = 0;
+  np = size;
+  np_offset=0;
+  while (np>1) {
+    int np_half = (np+1)/2;
+    int r_half = np_half + np_offset;
 
-  // sort the list back to local id ordering
-  std::sort(sNodes, sNodes+sTotal,
+    int is_lo = (rank<r_half) ? 1 : 0;
+
+    int partner = np-1-(rank-np_offset)+np_offset;
+    int Nmsg=1;
+    if (partner==rank) {
+      partner=r_half;
+      Nmsg=0;
+    }
+    if (np&1 && rank==r_half) {
+      Nmsg=2;
+    }
+    levels[Nlevels].partner = partner;
+    levels[Nlevels].Nmsg = Nmsg;
+
+    //count lo/hi nodes
+    dlong Nlo=0, Nhi=0;
+    for (dlong n=0;n<N;n++) {
+      if (nodes[n].rank<r_half)
+        Nlo++;
+      else
+        Nhi++;
+    }
+
+    int Nsend=(is_lo) ? Nhi : Nlo;
+
+    MPI_Isend(&Nsend, 1, MPI_INT, partner, rank, comm, request+0);
+
+    int Nrecv0=0, Nrecv1=0;
+    if (Nmsg>0)
+      MPI_Irecv(&Nrecv0, 1, MPI_INT, partner, partner, comm, request+1);
+    if (Nmsg==2)
+      MPI_Irecv(&Nrecv1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+
+    MPI_Waitall(Nmsg+1, request, status);
+
+    int Nrecv = Nrecv0+Nrecv1;
+
+    //make room for the nodes we'll recv
+    if (is_lo) Nlo+=Nrecv;
+    else       Nhi+=Nrecv;
+
+    //split node list in two
+    parallelNode_t *loNodes = (parallelNode_t *) malloc(Nlo*sizeof(parallelNode_t));
+    parallelNode_t *hiNodes = (parallelNode_t *) malloc(Nhi*sizeof(parallelNode_t));
+
+    Nlo=0, Nhi=0;
+    for (dlong n=0;n<N;n++) {
+      if (nodes[n].rank<r_half)
+        loNodes[Nlo++] = nodes[n];
+      else
+        hiNodes[Nhi++] = nodes[n];
+    }
+
+    if (np!=size) free(nodes);
+    nodes = is_lo ? loNodes : hiNodes;
+    N     = is_lo ? Nlo+Nrecv : Nhi+Nrecv;
+
+    int offset = is_lo ? Nlo : Nhi;
+    parallelNode_t *sendNodes = is_lo ? hiNodes : loNodes;
+
+    //count how many entries from the halo buffer we're sending
+    int NentriesSend=0;
+    for (dlong n=0;n<Nsend;n++) {
+      if (n==0 || abs(sendNodes[n].baseId)!=abs(sendNodes[n-1].baseId)) {
+        NentriesSend++;
+      }
+    }
+    levels[Nlevels].Nsend = NentriesSend;
+    levels[Nlevels].sendIds = (dlong *) malloc(NentriesSend*sizeof(dlong));
+
+    NentriesSend=0; //reset
+    for (dlong n=0;n<Nsend;n++) {
+      if (n==0 || abs(sendNodes[n].baseId)!=abs(sendNodes[n-1].baseId)) {
+        levels[Nlevels].sendIds[NentriesSend++] = sendNodes[n].localId;
+        // printf("rank %d, Send %d LocalId %d BaseId %d \n", rank, NentriesSend-1, sendNodes[n].localId, sendNodes[n].baseId);
+      }
+      sendNodes[n].localId = -1; //wipe the localId before sending
+    }
+
+    //share the entry count with our partner
+    MPI_Isend(&NentriesSend, 1, MPI_INT, partner, rank, comm, request+0);
+
+    int NentriesRecv0=0, NentriesRecv1=0;
+    if (Nmsg>0)
+      MPI_Irecv(&NentriesRecv0, 1, MPI_INT, partner, partner, comm, request+1);
+    if (Nmsg==2)
+      MPI_Irecv(&NentriesRecv1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+
+    MPI_Waitall(Nmsg+1, request, status);
+
+    levels[Nlevels].Nrecv0 = NentriesRecv0;
+    levels[Nlevels].Nrecv1 = NentriesRecv1;
+
+    //send half the list to our partner
+    MPI_Isend(sendNodes, Nsend,
+              MPI_PARALLELNODE_T, partner, rank, comm, request+0);
+
+    //recv new nodes from our partner(s)
+    if (Nmsg>0)
+      MPI_Irecv(nodes+offset,        Nrecv0,
+                MPI_PARALLELNODE_T, partner, partner, comm, request+1);
+    if (Nmsg==2)
+      MPI_Irecv(nodes+offset+Nrecv0, Nrecv1,
+                MPI_PARALLELNODE_T, r_half-1, r_half-1, comm, request+2);
+
+    MPI_Waitall(Nmsg+1, request, status);
+
+    free(sendNodes);
+
+    //We now have a list of nodes who's destinations are in our half
+    // of the hypercube
+    //We now build the scatter into the haloBuffer
+
+    //record the current order in newId
+    for (dlong n=0;n<N;n++) nodes[n].newId = n;
+
+    //sort the new node list by baseId to find matches
+    std::sort(nodes, nodes+N,
             [](const parallelNode_t& a, const parallelNode_t& b) {
-              return a.localId < b.localId;
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.localId > b.localId; //positive localIds first
             });
 
-  dlong *gIndexMap = (dlong*) malloc(gTotal*sizeof(dlong));
-  for (dlong i=0;i<gTotal;i++) gIndexMap[i] = -1; //initialize map
+    //fill localIds of new entries if possible, or give them an index
+    dlong id = 0;
+    for (dlong n=0;n<N;n++) {
+      //for each baseId group
+      if (n==0 || (abs(nodes[n].baseId)!=abs(nodes[n-1].baseId))) {
+        id = nodes[n].localId; //get localId
+        //no non-empty localId, must be a new node
+        if (id==-1) id = NhaloExt++;
+      }
+      nodes[n].localId = id;
+    }
 
-  //make a list of nodes to send upstream
-  parallelNode_t *gNodes = (parallelNode_t* )
-                           malloc(Nsend*sizeof(parallelNode_t));
+    //sort back to first ordering
+    std::sort(nodes, nodes+N,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              return a.newId < b.newId;
+            });
 
-  partialGather = new ogsGather_t();
-
-  partialGather->Nrows = gTotal;
-  partialGather->Ncols = sTotal;
-
-  int *gatherCounts  = (int*) calloc(partialGather->Nrows,sizeof(int));
-  dlong cnt=0;
-  dlong cnt2=Nsend; //indexing for nodes which stop at this rank
-  for (dlong i=0;i<sTotal;i++) {
-    dlong newId = sNodes[i].newId; //get the new baseId group id
-
-    //record a new index if we've not encoutered this baseId group before
-    if (gIndexMap[newId]==-1) {
-      if (sNodes[i].destRank<rank) {
-        gIndexMap[newId] = cnt;
-        gNodes[cnt] = sNodes[i]; //copy the nodes here to send upstream
-        cnt++;
-      } else {
-        gIndexMap[newId] = cnt2++;
+    if (Nmsg>0) {
+      levels[Nlevels].recvIds0 = (dlong *) malloc(NentriesRecv0*sizeof(dlong));
+      NentriesRecv0=0;
+      for (dlong n=offset;n<offset+Nrecv0;n++) {
+        if (n==offset || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+          levels[Nlevels].recvIds0[NentriesRecv0++] = nodes[n].localId;
+        }
+      }
+    }
+    if (Nmsg==2) {
+      levels[Nlevels].recvIds1 = (dlong *) malloc(NentriesRecv1*sizeof(dlong));
+      NentriesRecv1=0;
+      for (dlong n=offset+Nrecv0;n<N;n++) {
+        if (n==offset+Nrecv0 || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+          levels[Nlevels].recvIds1[NentriesRecv1++] = nodes[n].localId;
+        }
       }
     }
 
-    const dlong gid = gIndexMap[newId];
-    sNodes[i].newId = gid; //reorder
-    gatherCounts[gid]++;  //tally
+    //sort the new node list by baseId
+    std::sort(nodes, nodes+N,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
+
+    //Shrink the size of the hypercube
+    if (is_lo) {
+      np = np_half;
+    } else {
+      np -= np_half;
+      np_offset = r_half;
+    }
+    Nlevels++;
   }
-  free(gIndexMap);
+  if (size>1) free(nodes);
 
-  //send list of nodes upstream
-  if (upstreamPartner!=-1) {
-    MPI_Send(gNodes, Nsend, MPI_PARALLELNODE_T, upstreamPartner, 0, comm);
-  }
-
-  //make local row offsets
-  partialGather->rowStarts = (dlong*) calloc(partialGather->Nrows+1,sizeof(dlong));
-  for (dlong i=0;i<partialGather->Nrows;i++) {
-    partialGather->rowStarts[i+1] = partialGather->rowStarts[i] + gatherCounts[i];
-
-    //reset counters
-    gatherCounts[i] = 0;
-  }
-  partialGather->nnz = partialGather->rowStarts[partialGather->Nrows];
-
-  partialGather->colIds = (dlong*) calloc(partialGather->nnz+1,sizeof(dlong)); //extra entry so the occa buffer will actually exist
-
-  for (dlong i=0;i<sTotal;i++) {
-    const dlong gid = sNodes[i].newId;
-
-    const dlong soffset = partialGather->rowStarts[gid];
-    const int sindex  = gatherCounts[gid];
-    partialGather->colIds[soffset+sindex] = sNodes[i].localId; //record id
-    gatherCounts[gid]++;
-  }
-  free(sNodes); //done with these
-  free(gatherCounts);
-
-  partialGather->o_rowStarts = platform.malloc((partialGather->Nrows+1)*sizeof(dlong), partialGather->rowStarts);
-  partialGather->o_colIds = platform.malloc((partialGather->nnz+1)*sizeof(dlong), partialGather->colIds);
-
-  if (rank==0) {
-    //root rank makes a gatherScatter operator
-    rootGS = new ogsGatherScatter_t();
-    rootGS->Nrows = partialGather->Nrows;
-    rootGS->gather  = partialGather;
-    rootGS->scatter = partialGather;
-    rootGS->setupRowBlocks(platform);
-  } else {
-    //other ranks setup a gather operator
-    partialGather->setupRowBlocks(platform);
-    partialScatter = new ogsScatter_t(partialGather, platform, true);
+  NsendMax=0, NrecvMax=0;
+  for (int k=0;k<Nlevels;k++) {
+    int Nsend = levels[k].Nsend;
+    NsendMax = (Nsend>NsendMax) ? Nsend : NsendMax;
+    int Nrecv = levels[k].Nrecv0 + levels[k].Nrecv1;
+    NrecvMax = (Nrecv>NrecvMax) ? Nrecv : NrecvMax;
   }
 
   gatherHalo->setupRowBlocks(platform);
   scatterHalo = new ogsScatter_t(gatherHalo, platform);
-
-  //free up the node lists
-  MPI_Barrier(comm);
-  free(gNodes);
 
   //make scratch space
   reallocOccaBuffer(sizeof(dfloat));
 }
 
 void ogsCrystalRouter_t::reallocOccaBuffer(size_t Nbytes) {
-  if (o_sBuf.size() < sTotal*Nbytes) {
-    if (o_sBuf.size()) o_sBuf.free();
-    sBuf = platform.hostMalloc(sTotal*Nbytes,  nullptr, h_sBuf);
-    o_sBuf = platform.malloc(sTotal*Nbytes);
+  if (o_haloBuf.size() < NhaloExt*Nbytes) {
+    if (o_haloBuf.size()) o_haloBuf.free();
+    haloBuf = platform.hostMalloc(NhaloExt*Nbytes,  nullptr, h_haloBuf);
+    o_haloBuf = platform.malloc(NhaloExt*Nbytes);
   }
-  if (o_gBuf.size() < gTotal*Nbytes) {
-    if (o_gBuf.size()) o_gBuf.free();
-    gBuf = platform.hostMalloc(gTotal*Nbytes,  nullptr, h_gBuf);
-    o_gBuf = platform.malloc(gTotal*Nbytes);
+  if (o_sendBuf.size() < NsendMax*Nbytes) {
+    if (o_sendBuf.size()) o_sendBuf.free();
+    sendBuf = platform.hostMalloc(NsendMax*Nbytes,  nullptr, h_sendBuf);
+    o_sendBuf = platform.malloc(NsendMax*Nbytes);
+  }
+  if (o_recvBuf.size() < NrecvMax*Nbytes) {
+    if (o_recvBuf.size()) o_recvBuf.free();
+    recvBuf = platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_recvBuf);
+    o_recvBuf = platform.malloc(NrecvMax*Nbytes);
   }
 }
 

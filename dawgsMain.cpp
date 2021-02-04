@@ -67,7 +67,7 @@ void factor3(const int size, int &size_x, int &size_y, int &size_z) {
 }
 
 void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
-                     dfloat *qtest, dfloat *qcheck,
+                     dfloat *qtest, dfloat *qcheck, hlong* ids,
                      ogs::ogs_t &ogs, const ogs::ogs_method method,
                      bool gpu_aware, bool overlap, MPI_Comm comm) {
   int rank = ogs.platform.rank;
@@ -79,6 +79,12 @@ void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
 
   //copy back to host
   o_q.copyTo(qtest);
+
+  for (dlong n=0;n<N;n++) {
+    if (fabs(qtest[n]-qcheck[n])>0.0) {
+      printf("Rank %d, Entry %d, baseId %lld Error= %f \n", rank, n, ids[n], fabs(qtest[n]-qcheck[n]));
+    }
+  }
 
   dfloat err=0.0;
   for (dlong n=0;n<N;n++) err += fabs(qtest[n]-qcheck[n]);
@@ -323,52 +329,52 @@ int main(int argc, char **argv){
     dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
     CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_all_reduce, false, false, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_pairwise, false, false, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_crystal_router, false, false, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_all_reduce, false, true, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_pairwise, false, true, comm);
 
     CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_crystal_router, false, true, comm);
 
     if (gpu_aware) {
       CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_all_reduce, true, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck,
+                      qtest, qcheck, ids,
                       ogs, ogs::ogs_pairwise, true, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck,
+                      qtest, qcheck, ids,
                       ogs, ogs::ogs_crystal_router, true, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck,
+                    qtest, qcheck, ids,
                     ogs, ogs::ogs_all_reduce, true, true, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck,
+                      qtest, qcheck, ids,
                       ogs, ogs::ogs_pairwise, true, true, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck,
+                      qtest, qcheck, ids,
                       ogs, ogs::ogs_crystal_router, true, true, comm);
     }
 

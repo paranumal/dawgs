@@ -135,21 +135,19 @@ ogsAllToAll_t::ogsAllToAll_t(dlong recvN,
   MPI_Comm_rank(comm, &rank);
   MPI_Comm_size(comm, &size);
 
+  std::sort(recvNodes, recvNodes+recvN,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
+              if(abs(a.baseId) > abs(b.baseId)) return false;
+
+              return a.baseId < b.baseId; //positive ids first
+            });
+
   //make array of counters
   dlong *haloGatherCounts  = (dlong*) calloc(gatherHalo->Nrows,sizeof(dlong));
 
-  dlong id=0;
   for (dlong n=0;n<recvN;n++) { //loop through nodes needed for gathering halo nodes
-    if (n==0 || abs(recvNodes[n].baseId)!=abs(recvNodes[n-1].baseId)) { //for each baseId group
-      //Find the node in this baseId group which was populated by this rank
-      dlong origin=n;
-      while (recvNodes[origin].rank!=rank) origin++;
-
-      //map the baseId index to the coalesced ordering
-      id = indexMap[recvNodes[origin].newId] - NgatherLocal;
-    }
-    recvNodes[n].localId = id; //record the coalesced index for this baseId
-
+    dlong id = recvNodes[n].localId; //coalesced index for this baseId
     haloGatherCounts[id]++;  //tally
   }
 

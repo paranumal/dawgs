@@ -121,8 +121,58 @@ public:
   virtual void reallocOccaBuffer(size_t Nbytes);
 };
 
-//MPI communcation via crystal router
+//MPI communcation via Crystal Router
 class ogsCrystalRouter_t: public ogsExchange_t {
+private:
+  platform_t &platform;
+  MPI_Comm comm;
+  int rank, size;
+
+  ogsGather_t  *gatherHalo=nullptr;
+  ogsScatter_t *scatterHalo=nullptr;
+
+  MPI_Request request[3];
+  MPI_Status status[3];
+
+  struct crLevel {
+    int Nmsg;
+    int partner;
+
+    int Nsend, Nrecv0, Nrecv1;
+
+    dlong *sendIds;
+    dlong *recvIds0, *recvIds1;
+  };
+
+  int Nlevels=0;
+  crLevel* levels=nullptr;
+
+  int Nhalo=0, NhaloExt=0;
+  void *haloBuf=nullptr;
+  occa::memory o_haloBuf, h_haloBuf;
+
+  int NsendMax=0, NrecvMax=0;
+  void *sendBuf=nullptr, *recvBuf=nullptr;
+  occa::memory o_sendBuf, o_recvBuf;
+  occa::memory h_sendBuf, h_recvBuf;
+
+public:
+  ogsCrystalRouter_t(dlong recvN,
+               parallelNode_t* recvNodes,
+               dlong NgatherLocal,
+               ogsGather_t *_gatherHalo,
+               dlong *indexMap,
+               MPI_Comm _comm,
+               platform_t &_platform);
+
+  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
+
+  virtual void reallocOccaBuffer(size_t Nbytes);
+};
+
+//MPI communcation via binary tree
+class ogsBinaryTree_t: public ogsExchange_t {
 private:
   platform_t &platform;
   MPI_Comm comm;
@@ -150,7 +200,7 @@ private:
   MPI_Status* statuses;
 
 public:
-  ogsCrystalRouter_t(dlong recvN,
+  ogsBinaryTree_t(dlong recvN,
                parallelNode_t* recvNodes,
                dlong NgatherLocal,
                ogsGather_t *_gatherHalo,
