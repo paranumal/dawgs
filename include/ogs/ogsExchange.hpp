@@ -142,6 +142,9 @@ private:
 
     dlong *sendIds;
     dlong *recvIds0, *recvIds1;
+
+    occa::memory o_sendIds;
+    occa::memory o_recvIds0, o_recvIds1;
   };
 
   int Nlevels=0;

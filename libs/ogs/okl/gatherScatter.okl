@@ -184,3 +184,33 @@ SOFTWARE.
 
 
 OGS_FOR_EACH_TYPE(DEFINE_PROCS)
+
+//set every entry of a vector to a constant scalar
+@kernel void set(const dlong N,
+                 const dfloat alpha,
+                 @restrict dfloat *a){
+
+  for(dlong n=0;n<N;++n;@tile(p_blockSize,@outer,@inner)){
+    a[n] = alpha;
+  }
+}
+
+//extract sparse entries from vector
+@kernel void extract(const dlong N,
+                     @restrict const dlong *ids,
+                     @restrict const dfloat *q,
+                           @restrict dfloat *gatherq) {
+  for(dlong n=0;n<N;++n;@tile(p_blockSize, @outer, @inner)){
+    gatherq[n] = q[ids[n]];
+  }
+}
+
+//inject sparse entries into vector
+@kernel void inject(const dlong N,
+                     @restrict const dlong *ids,
+                     @restrict const dfloat *gatherq,
+                           @restrict dfloat *q) {
+  for(dlong n=0;n<N;++n;@tile(p_blockSize, @outer, @inner)){
+    q[ids[n]] += gatherq[n];
+  }
+}

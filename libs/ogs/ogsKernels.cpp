@@ -59,6 +59,10 @@ namespace ogs {
 
 OGS_FOR_EACH_TYPE(DEFINE_KERNELS)
 
+  occa::kernel setKernel;
+  occa::kernel extractKernel;
+  occa::kernel injectKernel;
+
   MPI_Datatype MPI_PARALLELNODE_T;
 
 
@@ -134,6 +138,13 @@ void initKernels(platform_t& platform) {
   DEFINE_SCATTER_BUILD(T)
 
   OGS_FOR_EACH_TYPE(DEFINE_BUILD)
+
+  setKernel = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",
+                                   "set", kernelInfo);
+  extractKernel = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",
+                                   "extract", kernelInfo);
+  injectKernel = platform.buildKernel(OGS_DIR "/okl/gatherScatter.okl",
+                                   "inject", kernelInfo);
 
   // if(rank==0) printf("done.\n");
 }

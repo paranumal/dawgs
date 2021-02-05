@@ -78,15 +78,8 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
     rBufPtr = (char*)recvBuf;
   }
 
-  if (gatherHalo->Nrows) {
-    //synchronize data stream to ensure the send buffer is ready
-    device.setStream(dataStream);
-    device.finish();
-  }
-
-  //zero extra section in halo buffer
-  for (int n=Nhalo;n<NhaloExt;n++)
-    ((dfloat*)haloBuf)[n] = 0.0;
+  //the intermediate kernels are always overlapped with the default stream
+  device.setStream(dataStream);
 
   for (int k=0;k<Nlevels;k++) {
 
@@ -100,25 +93,60 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
                 rank-1, rank-1, comm, request+2);
 
     //assemble send buffer
-    for (int n=0;n<levels[k].Nsend;n++) {
-      ((dfloat*)sBufPtr)[n] = ((dfloat*)haloBuf)[levels[k].sendIds[n]];
+    if (gpu_aware) {
+      if (levels[k].Nsend) {
+        extractKernel(levels[k].Nsend, levels[k].o_sendIds,
+                      o_haloBuf, o_sendBuf);
+        device.finish();
+      }
+    } else {
+      for (int n=0;n<levels[k].Nsend;n++) {
+        ((dfloat*)sBufPtr)[n] = ((dfloat*)haloBuf)[levels[k].sendIds[n]];
+      }
     }
 
     //post send
     MPI_Isend(sBufPtr, levels[k].Nsend, MPI_DFLOAT,
               levels[k].partner, rank, comm, request+0);
 
+    if (k==0) {
+      //zero extra section in halo buffer
+      if (gpu_aware) {
+        if (NhaloExt-Nhalo) {
+          const dfloat zero = 0.0;
+          setKernel(NhaloExt-Nhalo, zero, o_haloBuf+Nhalo*Nbytes);
+        }
+      } else {
+        for (int n=Nhalo;n<NhaloExt;n++)
+          ((dfloat*)haloBuf)[n] = 0.0;
+      }
+    }
+
     MPI_Waitall(levels[k].Nmsg+1, request, status);
 
     //Scatter the recv buffer into the haloBuffer
     if (levels[k].Nmsg>0) {
-      for (int n=0;n<levels[k].Nrecv0;n++) {
-        ((dfloat*)haloBuf)[levels[k].recvIds0[n]] += ((dfloat*)rBufPtr)[n];
+      if (gpu_aware) {
+        if (levels[k].Nrecv0) {
+          injectKernel(levels[k].Nrecv0, levels[k].o_recvIds0,
+                       o_recvBuf, o_haloBuf);
+        }
+      } else {
+        for (int n=0;n<levels[k].Nrecv0;n++) {
+          ((dfloat*)haloBuf)[levels[k].recvIds0[n]] += ((dfloat*)rBufPtr)[n];
+        }
       }
     }
     if (levels[k].Nmsg==2) {
-      for (int n=0;n<levels[k].Nrecv1;n++) {
-        ((dfloat*)haloBuf)[levels[k].recvIds1[n]] += ((dfloat*)rBufPtr)[n+levels[k].Nrecv0];
+      if (gpu_aware) {
+        if (levels[k].Nrecv1) {
+          injectKernel(levels[k].Nrecv1, levels[k].o_recvIds1,
+                       o_recvBuf + levels[k].Nrecv0*Nbytes, o_haloBuf);
+        }
+      } else {
+        for (int n=0;n<levels[k].Nrecv1;n++) {
+          ((dfloat*)haloBuf)[levels[k].recvIds1[n]] += ((dfloat*)rBufPtr)[n+levels[k].Nrecv0];
+        }
       }
     }
   }
@@ -135,6 +163,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
     if (overlap) {
       device.setStream(dataStream);
     } else {
+      device.finish();
       device.setStream(currentStream);
     }
 
@@ -317,6 +346,8 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
       }
       sendNodes[n].localId = -1; //wipe the localId before sending
     }
+    levels[Nlevels].o_sendIds = platform.malloc(NentriesSend*sizeof(dlong),
+                                                levels[Nlevels].sendIds);
 
     //share the entry count with our partner
     MPI_Isend(&NentriesSend, 1, MPI_INT, partner, rank, comm, request+0);
@@ -390,6 +421,8 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
           levels[Nlevels].recvIds0[NentriesRecv0++] = nodes[n].localId;
         }
       }
+      levels[Nlevels].o_recvIds0 = platform.malloc(NentriesRecv0*sizeof(dlong),
+                                                levels[Nlevels].recvIds0);
     }
     if (Nmsg==2) {
       levels[Nlevels].recvIds1 = (dlong *) malloc(NentriesRecv1*sizeof(dlong));
@@ -399,6 +432,8 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
           levels[Nlevels].recvIds1[NentriesRecv1++] = nodes[n].localId;
         }
       }
+      levels[Nlevels].o_recvIds1 = platform.malloc(NentriesRecv1*sizeof(dlong),
+                                                levels[Nlevels].recvIds1);
     }
 
     //sort the new node list by baseId

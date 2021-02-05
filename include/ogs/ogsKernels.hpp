@@ -88,6 +88,10 @@ OGS_FOR_EACH_TYPE(DEFINE_KERNELS)
 #undef DEFINE_SCATTER_KERNEL
 #undef DEFINE_KERNELS
 
+  extern occa::kernel setKernel;
+  extern occa::kernel extractKernel;
+  extern occa::kernel injectKernel;
+
 } //namespace ogs
 
 #endif
