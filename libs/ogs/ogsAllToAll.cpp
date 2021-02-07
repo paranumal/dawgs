@@ -286,4 +286,22 @@ void ogsAllToAll_t::reallocOccaBuffer(size_t Nbytes) {
   }
 }
 
+ogsAllToAll_t::~ogsAllToAll_t() {
+  if(prempi) prempi->Free();
+  if(postmpi) postmpi->Free();
+
+  if(sendS) sendS->Free();
+  if(recvS) recvS->Free();
+
+  if(o_sendBuf.size()) o_sendBuf.free();
+  if(o_recvBuf.size()) o_recvBuf.free();
+  if(h_sendBuf.size()) h_sendBuf.free();
+  if(h_recvBuf.size()) h_recvBuf.free();
+
+  if(mpiSendCounts) free(mpiSendCounts);
+  if(mpiRecvCounts) free(mpiRecvCounts);
+  if(mpiSendOffsets) free(mpiSendOffsets);
+  if(mpiRecvOffsets) free(mpiRecvOffsets);
+}
+
 } //namespace ogs

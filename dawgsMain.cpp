@@ -215,220 +215,239 @@ int main(int argc, char **argv){
   dlong NX, NY, NZ; //global
   dlong nx, ny, nz; //local
 
-  //get global size from settings
-  settings.getSetting("BOX NX", NX);
-  settings.getSetting("BOX NY", NY);
-  settings.getSetting("BOX NZ", NZ);
+  ogs::ogs_t ogs0(platform);
 
-  //get local size from settings
-  settings.getSetting("LOCAL BOX NX", nx);
-  settings.getSetting("LOCAL BOX NY", ny);
-  settings.getSetting("LOCAL BOX NZ", nz);
-  if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
-    //set global size by multiplying local size by grid dims
-    NX = nx * size_x;
-    NY = ny * size_y;
-    NZ = nz * size_z;
-    settings.changeSetting("BOX NX", std::to_string(NX));
-    settings.changeSetting("BOX NY", std::to_string(NY));
-    settings.changeSetting("BOX NZ", std::to_string(NZ));
-  } else {
-    //WARNING setting global sizes on input overrides any local sizes provided
-    nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
-    ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
-    nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
-  }
+  std::vector<int> overheads{0, 5,10,25,50,75,100, 200};
 
-  if (settings.compareSetting("VERBOSE", "TRUE"))
-    settings.report();
+  for (int NN=1; NN<10;NN++) {
+    //get global size from settings
+    settings.getSetting("BOX NX", NX);
+    settings.getSetting("BOX NY", NY);
+    settings.getSetting("BOX NZ", NZ);
 
-  if (rank==0 && settings.compareSetting("VERBOSE", "TRUE")) {
-    std::cout << "MPI grid configuration: " << size_x << " x "
-                                            << size_y << " x "
-                                            << size_z << std::endl;
-  }
+    //get local size from settings
+    // settings.getSetting("LOCAL BOX NX", nx);
+    // settings.getSetting("LOCAL BOX NY", ny);
+    // settings.getSetting("LOCAL BOX NZ", nz);
+    nx = NN;
+    ny = NN;
+    nz = NN;
 
-  dlong Nelements = nx*ny*nz;
+    // if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
+      //set global size by multiplying local size by grid dims
+      NX = nx * size_x;
+      NY = ny * size_y;
+      NZ = nz * size_z;
+      settings.changeSetting("BOX NX", std::to_string(NX));
+      settings.changeSetting("BOX NY", std::to_string(NY));
+      settings.changeSetting("BOX NZ", std::to_string(NZ));
+    // } else {
+    //   //WARNING setting global sizes on input overrides any local sizes provided
+    //   nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
+    //   ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
+    //   nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
+    // }
 
-  //find what global offsets my indices will start at
-  dlong NX_offset = rank_x * (NX/size_x) + ((rank_x < (NX % size_x)) ? rank_x : (NX % size_x));
-  dlong NY_offset = rank_y * (NY/size_y) + ((rank_y < (NY % size_y)) ? rank_y : (NY % size_y));
-  dlong NZ_offset = rank_z * (NZ/size_z) + ((rank_z < (NZ % size_z)) ? rank_z : (NZ % size_z));
+    if (settings.compareSetting("VERBOSE", "TRUE"))
+      settings.report();
 
-  //get polynomial degree
-  int N;
-  settings.getSetting("POLYNOMIAL DEGREE", N);
+    if (rank==0 && settings.compareSetting("VERBOSE", "TRUE")) {
+      std::cout << "MPI grid configuration: " << size_x << " x "
+                                              << size_y << " x "
+                                              << size_z << std::endl;
+    }
 
-  int Nq = N+1; //number of points in 1D
-  int Np = Nq*Nq*Nq; //number of points in full cube
+    dlong Nelements = nx*ny*nz;
 
-  //Now make array of global indices mimiking a 3D box of cube elements
+    //find what global offsets my indices will start at
+    dlong NX_offset = rank_x * (NX/size_x) + ((rank_x < (NX % size_x)) ? rank_x : (NX % size_x));
+    dlong NY_offset = rank_y * (NY/size_y) + ((rank_y < (NY % size_y)) ? rank_y : (NY % size_y));
+    dlong NZ_offset = rank_z * (NZ/size_z) + ((rank_z < (NZ % size_z)) ? rank_z : (NZ % size_z));
 
-  // hlong is usually a 64-bit integer type
-  hlong *ids = (hlong *) malloc(Nelements*Np*sizeof(hlong));
+    //get polynomial degree
+    int N;
+    settings.getSetting("POLYNOMIAL DEGREE", N);
 
-  for (int K=0;K<nz;K++) {
-    for (int J=0;J<ny;J++) {
-      for (int I=0;I<nx;I++) {
+    int Nq = N+1; //number of points in 1D
+    int Np = Nq*Nq*Nq; //number of points in full cube
 
-        hlong *ids_e = ids + (I + J*nx + K*nx*ny)*Np;
+    //Now make array of global indices mimiking a 3D box of cube elements
 
-        hlong baseId =  (I + NX_offset)*N
-                      + (J + NY_offset)*N*(N*NX+1)
-                      + (K + NZ_offset)*N*(N*NX+1)*(N*NY+1)
-                      + 1; //0 indcies are ignored, so shift everything by 1
+    // hlong is usually a 64-bit integer type
+    hlong *ids = (hlong *) malloc(Nelements*Np*sizeof(hlong));
 
-        for (int k=0;k<Nq;k++) {
-          for (int j=0;j<Nq;j++) {
-            for (int i=0;i<Nq;i++) {
-              ids_e[i+j*Nq+k*Nq*Nq] = i + j*(N*NX+1) + k*(N*NX+1)*(N*NY+1) + baseId;
+    for (int K=0;K<nz;K++) {
+      for (int J=0;J<ny;J++) {
+        for (int I=0;I<nx;I++) {
+
+          hlong *ids_e = ids + (I + J*nx + K*nx*ny)*Np;
+
+          hlong baseId =  (I + NX_offset)*N
+                        + (J + NY_offset)*N*(N*NX+1)
+                        + (K + NZ_offset)*N*(N*NX+1)*(N*NY+1)
+                        + 1; //0 indcies are ignored, so shift everything by 1
+
+          for (int k=0;k<Nq;k++) {
+            for (int j=0;j<Nq;j++) {
+              for (int i=0;i<Nq;i++) {
+                ids_e[i+j*Nq+k*Nq*Nq] = i + j*(N*NX+1) + k*(N*NX+1)*(N*NY+1) + baseId;
+              }
             }
           }
         }
       }
     }
-  }
 
-  ogs::ogs_t ogs(platform);
+    ogs::ogs_t ogs(platform);
 
-  int verbose = 1;
-  ogs.Setup(Nelements*Np, ids, comm, verbose);
+    int verbose = 1;
+    ogs.Setup(Nelements*Np, ids, comm, verbose);
 
-  //make an array
-  dfloat *q = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
+    //make an array
+    dfloat *q = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
-  //fill with ones
-  for (dlong n=0;n<Nelements*Np;n++) q[n]=1.0;
+    //fill with ones
+    for (dlong n=0;n<Nelements*Np;n++) q[n]=1.0;
 
-  //make a device array o_q, copying q from host on creation
-  occa::memory o_q = platform.malloc(Nelements*Np*sizeof(dfloat), q);
+    //make a device array o_q, copying q from host on creation
+    occa::memory o_q = platform.malloc(Nelements*Np*sizeof(dfloat), q);
 
 
-  if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
-    /*************************
-     * Test correctness
-     *************************/
-    //make a host gs handle (calls gslib)
-    void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
+    if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
+      /*************************
+       * Test correctness
+       *************************/
+      //make a host gs handle (calls gslib)
+      void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
 
-    if (rank==0) {
-      std::cout << "Ranks = " << size << ", ";
-      std::cout << "Global DOFS = " << Np*NX*NY*NZ << ", ";
-      std::cout << "Max Local DOFS = " << Np*Nelements << ", ";
-      std::cout << "Degree = " << N << std::endl;
-    }
+      if (rank==0) {
+        std::cout << "Ranks = " << size << ", ";
+        std::cout << "Global DOFS = " << Np*NX*NY*NZ << ", ";
+        std::cout << "Max Local DOFS = " << Np*Nelements << ", ";
+        std::cout << "Degree = " << N << std::endl;
+      }
 
-    //populate an array with the result we expect
-    dfloat *qcheck = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
+      //populate an array with the result we expect
+      dfloat *qcheck = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
-    for (dlong n=0;n<Nelements*Np;n++) qcheck[n] = q[n];
+      for (dlong n=0;n<Nelements*Np;n++) qcheck[n] = q[n];
 
-    //make the golden result
-    gsGatherScatter(qcheck, gsHandle);
+      //make the golden result
+      gsGatherScatter(qcheck, gsHandle);
 
-    dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
-
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, false, false, comm);
-
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_pairwise, false, false, comm);
-
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_crystal_router, false, false, comm);
-
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, false, true, comm);
-
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_pairwise, false, true, comm);
-
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_crystal_router, false, true, comm);
-
-    if (gpu_aware) {
-      CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, true, false, comm);
+      dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
       CorrectnessTest(Nelements*Np, q, o_q,
                       qtest, qcheck, ids,
-                      ogs, ogs::ogs_pairwise, true, false, comm);
+                      ogs, ogs::ogs_all_reduce, false, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
                       qtest, qcheck, ids,
-                      ogs, ogs::ogs_crystal_router, true, false, comm);
-
-      CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, true, true, comm);
+                      ogs, ogs::ogs_pairwise, false, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
                       qtest, qcheck, ids,
-                      ogs, ogs::ogs_pairwise, true, true, comm);
+                      ogs, ogs::ogs_crystal_router, false, false, comm);
 
       CorrectnessTest(Nelements*Np, q, o_q,
                       qtest, qcheck, ids,
-                      ogs, ogs::ogs_crystal_router, true, true, comm);
-    }
+                      ogs, ogs::ogs_all_reduce, false, true, comm);
 
-  } else {
-    /*************************
-     * Performance Test
-     *************************/
-    int64_t Ndofs = ((int64_t) Np)*NX*NY*NZ;
-    int Nlocal = Np*Nelements;
+      CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck, ids,
+                      ogs, ogs::ogs_pairwise, false, true, comm);
 
-    //All to all
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, false, comm);
+      CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck, ids,
+                      ogs, ogs::ogs_crystal_router, false, true, comm);
 
-    //Pairwise
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, false, comm);
+      if (gpu_aware) {
+        CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck, ids,
+                      ogs, ogs::ogs_all_reduce, true, false, comm);
 
-    //Crystal Router
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, false, comm);
+        CorrectnessTest(Nelements*Np, q, o_q,
+                        qtest, qcheck, ids,
+                        ogs, ogs::ogs_pairwise, true, false, comm);
 
-    //With Halo kernel overlap:
+        CorrectnessTest(Nelements*Np, q, o_q,
+                        qtest, qcheck, ids,
+                        ogs, ogs::ogs_crystal_router, true, false, comm);
 
-    //All to all
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, true, comm);
+        CorrectnessTest(Nelements*Np, q, o_q,
+                      qtest, qcheck, ids,
+                      ogs, ogs::ogs_all_reduce, true, true, comm);
 
-    //Pairwise
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, true, comm);
+        CorrectnessTest(Nelements*Np, q, o_q,
+                        qtest, qcheck, ids,
+                        ogs, ogs::ogs_pairwise, true, true, comm);
 
-    //Crystal Router
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, true, comm);
+        CorrectnessTest(Nelements*Np, q, o_q,
+                        qtest, qcheck, ids,
+                        ogs, ogs::ogs_crystal_router, true, true, comm);
+      }
 
-    if (gpu_aware) {
-      //All to all
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, false, comm);
+    } else {
+      /*************************
+       * Performance Test
+       *************************/
+      int64_t Ndofs = ((int64_t) Np)*NX*NY*NZ;
+      int Nlocal = Np*Nelements;
 
-      //Pairwise
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, false, comm);
+      for (int overhead : overheads) {
 
-      //Crystal Router
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, false, comm);
+        if(!rank) {
+          std::cout << "Overhead: " << overhead  << " ns:";
+        }
+
+        ogs::overhead = overhead;
+
+        //All to all
+        // PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, false, comm);
+
+        //Pairwise
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, false, comm);
+
+        //Crystal Router
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, false, comm);
+      }
 
       //With Halo kernel overlap:
 
-      //All to all
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, true, comm);
+      // //All to all
+      // PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, true, comm);
 
-      //Pairwise
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, true, comm);
+      // //Pairwise
+      // PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, true, comm);
 
-      //Crystal Router
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, true, comm);
+      // //Crystal Router
+      // PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, true, comm);
+
+      if (gpu_aware) {
+        //All to all
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, false, comm);
+
+        //Pairwise
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, false, comm);
+
+        //Crystal Router
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, false, comm);
+
+        //With Halo kernel overlap:
+
+        //All to all
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, true, comm);
+
+        //Pairwise
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, true, comm);
+
+        //Crystal Router
+        PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, true, comm);
+      }
     }
-  }
 
-  free(ids);
+    free(ids);
+  }
 
   // close down MPI
   MPI_Finalize();

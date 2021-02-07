@@ -171,10 +171,15 @@ SOFTWARE.
 #ifndef OGS_HPP
 #define OGS_HPP
 
+#include <chrono>
+#include <thread>
+#include <time.h>
 #include "core.hpp"
 #include "platform.hpp"
 
 namespace ogs {
+
+extern long overhead;
 
 /* type enum */
 typedef enum { ogs_float, ogs_double, ogs_int, ogs_long_long, ogs_type_n} ogs_type;

@@ -497,7 +497,19 @@ ogs_t::~ogs_t() {
 }
 
 void ogs_t::Free() {
-  //TODO
+  if(gatherLocal) delete gatherLocal;
+  if(scatterLocal) delete scatterLocal;
+  if(gsLocalS) delete gsLocalS;
+  if(gatherHalo) delete gatherHalo;
+  if(scatterHalo) delete scatterHalo;
+  if(exchange_ar) delete exchange_ar;
+  if(exchange_pw) delete exchange_pw;
+  if(exchange_cr) delete exchange_cr;
+  N=0;
+  Nlocal=0;
+  Nhalo=0;
+  Ngather=0;
+  NgatherGlobal=0;
 }
 
 // void setupRowBlocks(ogsData_t &A, platform_t &platform) {

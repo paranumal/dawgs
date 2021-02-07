@@ -124,4 +124,15 @@ void ogsGatherScatter_t::setupRowBlocks(platform_t &platform) {
   o_blockRowStarts = platform.malloc((NrowBlocks+1)*sizeof(dlong), blockRowStarts);
 }
 
+void ogsGatherScatter_t::Free(){
+  // if(gather)  {gather->Free(); gather=nullptr;}
+  // if(scatter) {scatter->Free(); scatter=nullptr;}
+  if(blockRowStarts) {free(blockRowStarts); blockRowStarts=nullptr;}
+  if(o_blockRowStarts.size()) o_blockRowStarts.free();
+
+  Nrows=0;
+  NrowBlocks=0;
+  is_diag=false;
+}
+
 } //namespace ogs

@@ -106,6 +106,7 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
     }
 
     //post send
+    std::this_thread::sleep_for(std::chrono::nanoseconds(overhead));
     MPI_Isend(sBufPtr, levels[k].Nsend, MPI_DFLOAT,
               levels[k].partner, rank, comm, request+0);
 
@@ -487,6 +488,20 @@ void ogsCrystalRouter_t::reallocOccaBuffer(size_t Nbytes) {
     recvBuf = platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_recvBuf);
     o_recvBuf = platform.malloc(NrecvMax*Nbytes);
   }
+}
+
+ogsCrystalRouter_t::~ogsCrystalRouter_t() {
+  // if(gatherHalo) gatherHalo->Free();
+  // if(scatterHalo) scatterHalo->Free();
+
+  if(levels) delete[] levels;
+
+  if(o_haloBuf.size()) o_haloBuf.free();
+  if(h_haloBuf.size()) h_haloBuf.free();
+  if(o_sendBuf.size()) o_sendBuf.free();
+  if(o_recvBuf.size()) o_recvBuf.free();
+  if(h_sendBuf.size()) h_sendBuf.free();
+  if(h_recvBuf.size()) h_recvBuf.free();
 }
 
 } //namespace ogs

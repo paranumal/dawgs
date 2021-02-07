@@ -37,6 +37,8 @@ namespace ogs {
 //virtual base class to perform MPI exchange of gatherScatter
 class ogsExchange_t {
 public:
+  virtual ~ogsExchange_t(){};
+
   virtual void Start(occa::memory &o_v, bool ga, bool overlap)=0;
   virtual void Finish(occa::memory &o_v, bool ga, bool overlap)=0;
 
@@ -72,6 +74,8 @@ public:
                dlong *indexMap,
                MPI_Comm _comm,
                platform_t &_platform);
+
+  virtual ~ogsAllToAll_t();
 
   virtual void Start(occa::memory &o_v, bool ga, bool overlap);
   virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
@@ -114,6 +118,8 @@ public:
                dlong *indexMap,
                MPI_Comm _comm,
                platform_t &_platform);
+
+  virtual ~ogsPairwise_t();
 
   virtual void Start(occa::memory &o_v, bool ga, bool overlap);
   virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
@@ -167,6 +173,8 @@ public:
                dlong *indexMap,
                MPI_Comm _comm,
                platform_t &_platform);
+
+  virtual ~ogsCrystalRouter_t();
 
   virtual void Start(occa::memory &o_v, bool ga, bool overlap);
   virtual void Finish(occa::memory &o_v, bool ga, bool overlap);

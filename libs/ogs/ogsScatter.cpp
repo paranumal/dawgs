@@ -109,4 +109,18 @@ ogsScatter_t::ogsScatter_t(ogsGather_t *gather, platform_t &platform,
   }
 }
 
+void ogsScatter_t::Free() {
+  if(rowStarts) {free(rowStarts); rowStarts=nullptr;}
+  if(colIds) {free(colIds); colIds=nullptr;}
+  if(blockRowStarts) {free(blockRowStarts); blockRowStarts=nullptr;}
+
+  if(o_rowStarts.size()) o_rowStarts.free();
+  if(o_colIds.size()) o_colIds.free();
+  if(o_blockRowStarts.size()) o_blockRowStarts.free();
+  Nrows=0;
+  Ncols=0;
+  NrowBlocks=0;
+  flat=false;
+}
+
 } //namespace ogs

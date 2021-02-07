@@ -97,4 +97,19 @@ void ogsGather_t::setupRowBlocks(platform_t &platform) {
   o_blockRowStarts = platform.malloc((NrowBlocks+1)*sizeof(dlong), blockRowStarts);
 }
 
+void ogsGather_t::Free() {
+  if(rowStarts) {free(rowStarts); rowStarts=nullptr;}
+  if(colIds) {free(colIds); colIds=nullptr;}
+  if(blockRowStarts) {free(blockRowStarts); blockRowStarts=nullptr;}
+
+  if(o_rowStarts.size()) o_rowStarts.free();
+  if(o_colIds.size()) o_colIds.free();
+  if(o_blockRowStarts.size()) o_blockRowStarts.free();
+  nnz=0;
+  Nrows=0;
+  Ncols=0;
+  NrowBlocks=0;
+  is_diag=false;
+}
+
 } //namespace ogs

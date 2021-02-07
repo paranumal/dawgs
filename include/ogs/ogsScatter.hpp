@@ -54,11 +54,12 @@ public:
   //optional flat indexing
   bool flat=false;
 
+  void Free();
+  ~ogsScatter_t() {Free();}
+
   //build a scatter operator from a transposed gather
   ogsScatter_t(ogsGather_t * gather, platform_t &platform,
                bool flatten=false);
-
-  void Free();
 
   void Apply(occa::memory& o_gv, occa::memory& o_v);
 

@@ -46,9 +46,10 @@ public:
 
   bool is_diag=false;
 
-  void setupRowBlocks(platform_t &platform);
-
   void Free();
+  ~ogsGatherScatter_t() {Free();};
+
+  void setupRowBlocks(platform_t &platform);
 
   void Apply(occa::memory& o_v);
   void Apply(occa::memory& o_v, occa::memory& o_w);

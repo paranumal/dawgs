@@ -99,6 +99,7 @@ void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
 
   //post sends
   for (int r=0;r<NranksSend;r++) {
+    std::this_thread::sleep_for(std::chrono::nanoseconds(overhead));
     MPI_Isend(sendPtr+sendOffsets[r]*Nbytes,
               sendCounts[r], MPI_DFLOAT, sendRanks[r],
               rank, comm, requests+NranksRecv+r);
@@ -337,6 +338,28 @@ void ogsPairwise_t::reallocOccaBuffer(size_t Nbytes) {
     recvBuf = platform.hostMalloc(postmpi->nnz*Nbytes,  nullptr, h_recvBuf);
     o_recvBuf = platform.malloc(postmpi->nnz*Nbytes);
   }
+}
+
+ogsPairwise_t::~ogsPairwise_t() {
+  if(prempi) prempi->Free();
+  if(postmpi) postmpi->Free();
+
+  if(sendS) sendS->Free();
+  if(recvS) recvS->Free();
+
+  if(o_sendBuf.size()) o_sendBuf.free();
+  if(o_recvBuf.size()) o_recvBuf.free();
+  if(h_sendBuf.size()) h_sendBuf.free();
+  if(h_recvBuf.size()) h_recvBuf.free();
+
+  if(sendRanks) free(sendRanks);
+  if(recvRanks) free(recvRanks);
+  if(sendCounts) free(sendCounts);
+  if(recvCounts) free(recvCounts);
+  if(sendOffsets) free(sendOffsets);
+  if(recvOffsets) free(recvOffsets);
+  if(requests) free(requests);
+  if(statuses) free(statuses);
 }
 
 } //namespace ogs

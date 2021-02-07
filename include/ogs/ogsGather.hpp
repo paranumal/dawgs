@@ -54,6 +54,7 @@ public:
   bool is_diag=false;
 
   void Free();
+  ~ogsGather_t() {Free();}
 
   void Apply(occa::memory& o_gv, occa::memory& o_v);
 
