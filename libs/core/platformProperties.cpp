@@ -69,8 +69,8 @@ void platform_t::DeviceProperties(){
     props["compiler_flags"] += "--prec-sqrt=false ";
     props["compiler_flags"] += "--use_fast_math ";
     props["compiler_flags"] += "--fmad=true "; // compiler option for cuda
-    props["compiler_flags"] += "-Xptxas -dlcm=ca";
-    // props["compiler_flags"] += "-Xcompiler -mno-float128";
+    props["compiler_flags"] += "-Xptxas -dlcm=ca ";
+    props["compiler_flags"] += "-Xcompiler -mno-float128 ";
   }
 
   if(device.mode()=="OpenCL"){ // add backend compiler optimization for OPENCL

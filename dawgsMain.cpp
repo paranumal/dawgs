@@ -134,43 +134,48 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   int n_iter = 50;
   dfloat starttime, endtime;
 
-  MPI_Barrier(comm);
-  starttime = MPI_Wtime();
+  std::vector<int> Nvec{0, 1, 3, 7};
 
-  for (int n=0;n<n_iter;n++) {
-    ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
-    //o_a.copyTo(o_b, o_a.size(), 0, 0, "async: true");
-    ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
-    ogs.platform.device.finish();
-  }
+  for (int m : Nvec) {
+    MPI_Barrier(comm);
+    starttime = MPI_Wtime();
 
-  //platform.device.finish();
-  MPI_Barrier(comm);
-  endtime = MPI_Wtime();
+    for (int n=0;n<n_iter;n++) {
+      ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
+      o_a.copyTo(o_b, Nlocal*m*sizeof(dfloat), 0, 0, "async: true");
+      ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
+      ogs.platform.device.finish();
+    }
 
-  double elapsed = (endtime-starttime)*1000/n_iter;
+    //platform.device.finish();
+    MPI_Barrier(comm);
+    endtime = MPI_Wtime();
 
-  if (rank==0) {
-    if (method==ogs::ogs_all_reduce)
-      std::cout << "AR ";
-    else if (method==ogs::ogs_pairwise)
-      std::cout << "PW ";
-    else
-      std::cout << "CR ";
+    double elapsed = (endtime-starttime)*1000/n_iter;
 
-    if (gpu_aware)
-      std::cout << ", GPU-aware ";
+    if (rank==0) {
+      if (method==ogs::ogs_all_reduce)
+        std::cout << "AR ";
+      else if (method==ogs::ogs_pairwise)
+        std::cout << "PW ";
+      else
+        std::cout << "CR ";
 
-    if (overlap)
-      std::cout << ", Overlap ";
+      if (gpu_aware)
+        std::cout << ", GPU-aware ";
 
-    std::cout << ": Ranks = " << size << ", ";
-    std::cout << "Global DOFS = " << Ndofs << ", ";
-    std::cout << "Max Local DOFS = " << Nlocal << ", ";
-    std::cout << "Degree = " << N << ", ";
-    std::cout << "Time taken = " << elapsed << " ms, ";
-    std::cout << "DOFS/s = " <<  ((1+Nvectors)*Ndofs*1000.0)/elapsed << ", ";
-    std::cout << "DOFS/(s*rank) = " <<  ((1+Nvectors)*Ndofs*1000.0)/(elapsed*size) << std::endl;
+      if (overlap)
+        std::cout << ", Overlap ";
+
+      std::cout << ": Ranks = " << size << ", ";
+      std::cout << "Global DOFS = " << Ndofs << ", ";
+      std::cout << "Max Local DOFS = " << Nlocal << ", ";
+      std::cout << "Degree = " << N << ", ";
+      std::cout << "Nvectors = " << m << ", ";
+      std::cout << "Time taken = " << elapsed << " ms, ";
+      std::cout << "DOFS/s = " <<  ((1+m)*Ndofs*1000.0)/elapsed << ", ";
+      std::cout << "DOFS/(s*rank) = " <<  ((1+m)*Ndofs*1000.0)/(elapsed*size) << std::endl;
+    }
   }
 }
 
@@ -219,11 +224,11 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   int Nq = N+1; //number of points in 1D
   int Np = Nq*Nq*Nq; //number of points in full cube
 
-  Nvectors=0;
-  //dfloat *a = (dfloat *) malloc(Nvectors*Nelements*Np*sizeof(dfloat));
-  //o_a = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
-  //o_b = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
-  //free(a);
+  Nvectors=7;
+  dfloat *a = (dfloat *) malloc(Nvectors*Nelements*Np*sizeof(dfloat));
+  o_a = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
+  o_b = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
+  free(a);
 
   //Now make array of global indices mimiking a 3D box of cube elements
 
@@ -491,7 +496,7 @@ int main(int argc, char **argv){
         settings.changeSetting("BOX NY", std::to_string(NY));
         settings.changeSetting("BOX NZ", std::to_string(NZ));
 
-        Test(platform, comm, settings, nx, ny, nz, NZ, NY, NZ, N);
+        Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
       }
     }
   }
