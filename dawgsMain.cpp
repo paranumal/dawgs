@@ -25,6 +25,9 @@ SOFTWARE.
 
 #include "dawgs.hpp"
 
+int Nvectors;
+occa::memory o_a, o_b;
+
 // find a factorization size = size_x*size_y*size_z such that
 //  size_x>=size_y>=size_z are all 'close' to one another
 void factor3(const int size, int &size_x, int &size_y, int &size_z) {
@@ -122,7 +125,9 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   int Nwarmup = 10;
   MPI_Barrier(comm);
   for (int n=0;n<Nwarmup;n++) {
-    ogs.GatherScatter(o_q, method, gpu_aware, overlap);
+    ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
+    //o_a.copyTo(o_b, o_a.size(), 0, 0, "async: true");
+    ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
     ogs.platform.device.finish();
   }
 
@@ -133,7 +138,9 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   starttime = MPI_Wtime();
 
   for (int n=0;n<n_iter;n++) {
-    ogs.GatherScatter(o_q, method, gpu_aware, overlap);
+    ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
+    //o_a.copyTo(o_b, o_a.size(), 0, 0, "async: true");
+    ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
     ogs.platform.device.finish();
   }
 
@@ -162,8 +169,8 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
     std::cout << "Max Local DOFS = " << Nlocal << ", ";
     std::cout << "Degree = " << N << ", ";
     std::cout << "Time taken = " << elapsed << " ms, ";
-    std::cout << "DOFS/s = " <<  (Ndofs*1000.0)/elapsed << ", ";
-    std::cout << "DOFS/(s*rank) = " <<  (Ndofs*1000.0)/(elapsed*size) << std::endl;
+    std::cout << "DOFS/s = " <<  ((1+Nvectors)*Ndofs*1000.0)/elapsed << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  ((1+Nvectors)*Ndofs*1000.0)/(elapsed*size) << std::endl;
   }
 }
 
@@ -211,6 +218,12 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 
   int Nq = N+1; //number of points in 1D
   int Np = Nq*Nq*Nq; //number of points in full cube
+
+  Nvectors=0;
+  //dfloat *a = (dfloat *) malloc(Nvectors*Nelements*Np*sizeof(dfloat));
+  //o_a = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
+  //o_b = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
+  //free(a);
 
   //Now make array of global indices mimiking a 3D box of cube elements
 

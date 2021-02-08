@@ -38,8 +38,8 @@ export LIBP_TEST_DIR=${LIBP_DIR}/test
 #paths to installed blas and lapack libraries
 export LIBP_BLAS_DIR  =/usr/lib/x86_64-linux-gnu
 export LIBP_LAPACK_DIR=/usr/lib/x86_64-linux-gnu
-export LIBP_BLAS_LIB  =-L${LIBP_BLAS_DIR} -lblas
-export LIBP_LAPACK_LIB=-L${LIBP_LAPACK_DIR} -llapack
+export LIBP_BLAS_LIB  =-L${LIBP_BLAS_DIR} -lopenblas
+export LIBP_LAPACK_LIB=-L${LIBP_LAPACK_DIR} -lopenblas
 
 #include OCCA
 export OCCA_DIR=${LIBP_DIR}/occa

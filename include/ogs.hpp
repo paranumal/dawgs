@@ -171,9 +171,6 @@ SOFTWARE.
 #ifndef OGS_HPP
 #define OGS_HPP
 
-#include <chrono>
-#include <thread>
-#include <time.h>
 #include "core.hpp"
 #include "platform.hpp"
 
