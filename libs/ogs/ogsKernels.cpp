@@ -34,8 +34,6 @@ SOFTWARE.
 
 namespace ogs {
 
-  long overhead=0;
-
   //NC: Hard code these for now. Should be sufficient for GPU devices, but needs attention for CPU
   const int blockSize = 256;
   const int gatherNodesPerBlock = 1024; //should be a multiple of blockSize for good unrolling

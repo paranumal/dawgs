@@ -106,7 +106,6 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
     }
 
     //post send
-    std::this_thread::sleep_for(std::chrono::nanoseconds(overhead));
     MPI_Isend(sBufPtr, levels[k].Nsend, MPI_DFLOAT,
               levels[k].partner, rank, comm, request+0);
 

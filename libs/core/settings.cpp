@@ -177,6 +177,10 @@ void settings_t::parseSettings(const int argc, char** argv) {
               strcmp(argv[i], "--correctness-check") == 0) {
             changeSetting("CORRECTNESS CHECK", "TRUE");
             i++;
+          } else if (strcmp(argv[i], "-sw") == 0 ||
+              strcmp(argv[i], "--sweep") == 0) {
+            changeSetting("SWEEP", "TRUE");
+            i++;
           } else {
             changeSetting(setting->name, string(argv[i+1]));
             i+=2;

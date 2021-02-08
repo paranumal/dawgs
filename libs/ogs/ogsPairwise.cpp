@@ -99,7 +99,6 @@ void ogsPairwise_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
 
   //post sends
   for (int r=0;r<NranksSend;r++) {
-    std::this_thread::sleep_for(std::chrono::nanoseconds(overhead));
     MPI_Isend(sendPtr+sendOffsets[r]*Nbytes,
               sendCounts[r], MPI_DFLOAT, sendRanks[r],
               rank, comm, requests+NranksRecv+r);

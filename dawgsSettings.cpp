@@ -96,7 +96,11 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
              "Check correctness of results using gslib",
              {"TRUE", "FALSE"});
 
-
+  newSetting("-sw", "--sweep",
+             "SWEEP",
+             "FALSE",
+             "Sweep through many problem sizes",
+             {"TRUE", "FALSE"});
 
   parseSettings(argc, argv);
 }
