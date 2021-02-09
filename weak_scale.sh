@@ -156,8 +156,10 @@ do
 
     #mpi run
     mpirun -np $n ${mpi_opts} dawgsMain -nx $S -ny $S -nz $S ${dawgs_opts}
-    
+
     #slurm run
 
     #srun -N $N -n $n -p amdMI60 dawgsMain -nx $S -ny $S -nz $S ${dawgs_opts}
+
+    #jsrun -n ${n} -g1 -a1 -c2 -l GPU-CPU --smpiargs="-gpu" ./dawgsMain -nx $S -ny $S -nz $S ${dawgs_opts}
 done

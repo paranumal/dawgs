@@ -25,7 +25,7 @@ SOFTWARE.
 
 #include "dawgs.hpp"
 
-int Nvectors;
+const int Nvectors=0;
 occa::memory o_a, o_b;
 
 // find a factorization size = size_x*size_y*size_z such that
@@ -126,7 +126,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   MPI_Barrier(comm);
   for (int n=0;n<Nwarmup;n++) {
     ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
-    //o_a.copyTo(o_b, o_a.size(), 0, 0, "async: true");
+    if (Nvectors) o_a.copyTo(o_b, Nlocal*Nvectors*sizeof(dfloat), 0, 0, "async: true");
     ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
     ogs.platform.device.finish();
   }
@@ -134,7 +134,8 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
   int n_iter = 50;
   dfloat starttime, endtime;
 
-  std::vector<int> Nvec{0, 1, 3, 7};
+  // std::vector<int> Nvec{0, 1, 3, 7};
+  std::vector<int> Nvec{0};
 
   for (int m : Nvec) {
     MPI_Barrier(comm);
@@ -142,7 +143,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
 
     for (int n=0;n<n_iter;n++) {
       ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
-      o_a.copyTo(o_b, Nlocal*m*sizeof(dfloat), 0, 0, "async: true");
+      if (Nvectors) o_a.copyTo(o_b, Nlocal*m*sizeof(dfloat), 0, 0, "async: true");
       ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
       ogs.platform.device.finish();
     }
@@ -224,11 +225,12 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   int Nq = N+1; //number of points in 1D
   int Np = Nq*Nq*Nq; //number of points in full cube
 
-  Nvectors=7;
-  dfloat *a = (dfloat *) malloc(Nvectors*Nelements*Np*sizeof(dfloat));
-  o_a = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
-  o_b = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
-  free(a);
+  if (Nvectors) {
+    dfloat *a = (dfloat *) malloc(Nvectors*Nelements*Np*sizeof(dfloat));
+    o_a = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
+    o_b = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
+    free(a);
+  }
 
   //Now make array of global indices mimiking a 3D box of cube elements
 
