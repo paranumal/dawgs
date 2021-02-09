@@ -26,7 +26,7 @@
 
 define DAWGS_HELP_MSG
 
-Gradient solver makefile targets:
+DAWGS makefile targets:
 
    make dawgsMain (default)
    make clean

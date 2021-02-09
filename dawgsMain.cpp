@@ -474,7 +474,7 @@ int main(int argc, char **argv){
       nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
     }
 
-    Test(platform, comm, settings, nx, ny, nz, NZ, NY, NZ, N);
+    Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
   } else {
     //sweep through lots of tests
     std::vector<int> NN_low {  2,  2,  2,  2,  2,  2,  2,  2};
