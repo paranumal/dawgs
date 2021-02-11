@@ -1,4 +1,4 @@
-
+%{
 files = {'data/summit/weakscale_summitV100N1n1.out';
          'data/summit/weakscale_summitV100N1n2.out';
          'data/summit/weakscale_summitV100N1n4.out';
@@ -8,6 +8,18 @@ files = {'data/summit/weakscale_summitV100N1n1.out';
          'data/summit/weakscale_summitV100N4n24.out';
          'data/summit/weakscale_summitV100N6n36.out';
          'data/summit/weakscale_summitV100N8n48.out'};
+%}
+files = {'data/redwood/weakscale_redwoodMI100N1n1.out';
+         'data/redwood/weakscale_redwoodMI100N1n2.out';
+         'data/redwood/weakscale_redwoodMI100N1n4.out';
+         'data/redwood/weakscale_redwoodMI100N2n8.out';
+         'data/redwood/weakscale_redwoodMI100N3n12.out';
+         'data/redwood/weakscale_redwoodMI100N4n16.out';
+         'data/redwood/weakscale_redwoodMI100N5n20.out';
+         'data/redwood/weakscale_redwoodMI100N6n24.out';
+         'data/redwood/weakscale_redwoodMI100N7n28.out'};
+         
+         
          
 Ndata=0;
 clear data;
@@ -61,7 +73,7 @@ for f=1:size(files,1)
     Nranks = str2num(rankStr{size(rankStr,2)});
     
     %skip single device data
-    %if (Nranks==1); continue; end;
+    if (Nranks==1); continue; end;
     
     gDofsStr = strsplit(splitline{3+offset});
     NGdofs = str2num(gDofsStr{size(gDofsStr,2)});
@@ -72,8 +84,8 @@ for f=1:size(files,1)
     pStr = strsplit(splitline{5+offset});
     p = str2num(pStr{size(pStr,2)});
     
-    %skip non p=4 data
-    if (p~=4); continue; end;
+    %skip non p=3 data
+    if (p~=3); continue; end;
     
     NvecStr = strsplit(splitline{6+offset});
     Nvec = str2num(NvecStr{size(NvecStr,2)});

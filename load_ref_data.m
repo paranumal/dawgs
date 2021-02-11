@@ -1,12 +1,20 @@
-
-files = {'data/summit/ref/weakscale_summitV100p4N1n2_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N1n4_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N1n6_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N2n12_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N3n18_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N4n24_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N6n36_ref.out';
-         'data/summit/ref/weakscale_summitV100p4N8n48_ref.out'};
+%{
+files = {'data/summit/ref/weakscale_summitV100N1n2_ref.out';
+         'data/summit/ref/weakscale_summitV100N1n4_ref.out';
+         'data/summit/ref/weakscale_summitV100N1n6_ref.out';
+         'data/summit/ref/weakscale_summitV100N2n12_ref.out';
+         'data/summit/ref/weakscale_summitV100N3n18_ref.out';
+         'data/summit/ref/weakscale_summitV100N4n24_ref.out';
+         'data/summit/ref/weakscale_summitV100N6n36_ref.out';
+         'data/summit/ref/weakscale_summitV100N8n48_ref.out'};
+%}
+files = {'data/redwood/ref/weakscale_redwoodMI100N1n2_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N1n4_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N2n8_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N3n12_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N4n16_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N5n20_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N6n24_ref.out';};
          
 Ndata=0;
 clear refdata;
@@ -25,8 +33,6 @@ for f=1:size(files,1)
      
     splitline = strsplit(thisline, {",",":"});
     
-    if (strncmp(splitline{1},"Compiling", 9)); continue; end;
-    
     rankStr = strsplit(splitline{1});
     Nranks = str2num(rankStr{size(rankStr,2)});
     
@@ -42,8 +48,8 @@ for f=1:size(files,1)
     pStr = strsplit(splitline{4});
     p = str2num(pStr{size(pStr,2)});
     
-    %skip non p=4 data
-    if (p~=4); continue; end;
+    %skip non p=3 data
+    if (p~=3); continue; end;
   
     timeStr = strsplit(splitline{5});
     time = str2num(timeStr{size(timeStr,2)-1});

@@ -180,6 +180,3 @@ info:
 	$(info CXXFLAGS  = $(DAWGS_CXXFLAGS))
 	$(info LIBS      = $(LIBS))
 	@true
-
-test: dawgsMain
-	@${MAKE} -C $(LIBP_TEST_DIR) --no-print-directory  test-gradient

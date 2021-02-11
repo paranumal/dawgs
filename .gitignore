@@ -34,3 +34,5 @@ test/__pycache__
 !test/cubeHex.msh
 
 .occa/
+data/
+*.tex
