@@ -25,152 +25,128 @@ SOFTWARE.
 */
 
 #include "ogs.hpp"
-#include "ogs/ogsKernels.hpp"
-#include "ogs/ogsGatherScatter.hpp"
+#include "ogs/ogsUtils.hpp"
 #include "ogs/ogsExchange.hpp"
 
 namespace ogs {
 
-void ogsCrystalRouter_t::Start(occa::memory& o_v, bool gpu_aware, bool overlap){
-
-  const size_t Nbytes = sizeof(dfloat);
-  reallocOccaBuffer(Nbytes);
+void ogsCrystalRouter_t::Start(const int k,
+                               const Type type,
+                               const Op op,
+                               const Transpose trans,
+                               const bool host){
 
   occa::device &device = platform.device;
+
+  //get current stream
   occa::stream currentStream = device.getStream();
 
-  if (gatherHalo->Nrows) {
-    //if overlapping the halo kernels, switch streams
-    if (overlap)
+  const dlong N = (trans == NoTrans) ? NhaloP : Nhalo;
+
+  if (N) {
+    if (!gpu_aware && !host) {
+      //if not using gpu-aware mpi and exchanging device buffers,
+      // move the halo buffer to the host
       device.setStream(dataStream);
-
-    // assemble mpi send buffer by gathering halo nodes
-    gatherHalo->Apply(o_haloBuf, o_v);
-
-    //if not overlapping, wait for kernel to finish on default stream
-    if (!overlap)
-      device.finish();
-
-    if (!gpu_aware) {
-      //switch streams to overlap data movement
-      device.setStream(dataStream);
-      o_haloBuf.copyTo(haloBuf, gatherHalo->Nrows*Nbytes, 0, "async: true");
+      const size_t Nbytes = k*Sizeof(type);
+      o_haloBuf.copyTo(haloBuf, N*Nbytes, 0, "async: true");
+      device.setStream(currentStream);
     }
-
-    device.setStream(currentStream);
   }
 }
 
 
-void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
+void ogsCrystalRouter_t::Finish(const int k,
+                                const Type type,
+                                const Op op,
+                                const Transpose trans,
+                                const bool host){
 
-  const size_t Nbytes = sizeof(dfloat);
+  const size_t Nbytes = k*Sizeof(type);
   occa::device &device = platform.device;
 
+  //get current stream
   occa::stream currentStream = device.getStream();
-
-  char *sBufPtr, *rBufPtr;
-  if (gpu_aware) { //device pointer
-    sBufPtr = (char*)o_sendBuf.ptr();
-    rBufPtr = (char*)o_recvBuf.ptr();
-  } else { //host pointer
-    sBufPtr = (char*)sendBuf;
-    rBufPtr = (char*)recvBuf;
-  }
 
   //the intermediate kernels are always overlapped with the default stream
   device.setStream(dataStream);
 
-  for (int k=0;k<Nlevels;k++) {
+  dlong N = (trans == NoTrans) ? NhaloP : Nhalo;
+
+  if (N && !gpu_aware && !host) {
+    //synchronize data stream to ensure the host buffer is on the host
+    device.finish();
+  }
+
+  crLevel *levels;
+  if (trans==NoTrans)
+    levels = levelsN;
+  else
+    levels = levelsT;
+
+  for (int l=0;l<Nlevels;l++) {
+
+    char *sendPtr, *recvPtr;
+    if (gpu_aware && !host) { //device pointer
+      sendPtr = (char*)o_sendBuf.ptr();
+      recvPtr = (char*)o_haloBuf.ptr() + levels[l].recvOffset*Nbytes;
+    } else { //host pointer
+      sendPtr = (char*)sendBuf;
+      recvPtr = (char*)haloBuf + levels[l].recvOffset*Nbytes;
+    }
 
     //post recvs
-    if (levels[k].Nmsg>0)
-      MPI_Irecv(rBufPtr, levels[k].Nrecv0, MPI_DFLOAT,
-                levels[k].partner, levels[k].partner, comm, request+1);
-    if (levels[k].Nmsg==2)
-      MPI_Irecv(rBufPtr+levels[k].Nrecv0*Nbytes,
-                levels[k].Nrecv1, MPI_DFLOAT,
+    if (levels[l].Nmsg>0) {
+      MPI_Irecv(recvPtr, k*levels[l].Nrecv0, MPI_Type(type),
+                levels[l].partner, levels[l].partner, comm, request+1);
+    }
+    if (levels[l].Nmsg==2) {
+      MPI_Irecv(recvPtr+levels[l].Nrecv0*Nbytes,
+                k*levels[l].Nrecv1, MPI_Type(type),
                 rank-1, rank-1, comm, request+2);
+    }
 
     //assemble send buffer
     if (gpu_aware) {
-      if (levels[k].Nsend) {
-        extractKernel(levels[k].Nsend, levels[k].o_sendIds,
-                      o_haloBuf, o_sendBuf);
+      if (levels[l].Nsend) {
+        extractKernel[type](levels[l].Nsend, k,
+                            levels[l].o_sendIds,
+                            o_haloBuf, o_sendBuf);
         device.finish();
       }
     } else {
-      for (int n=0;n<levels[k].Nsend;n++) {
-        ((dfloat*)sBufPtr)[n] = ((dfloat*)haloBuf)[levels[k].sendIds[n]];
-      }
+      extract(levels[l].Nsend, k, type,
+              levels[l].sendIds, haloBuf, sendBuf);
     }
 
     //post send
-    MPI_Isend(sBufPtr, levels[k].Nsend, MPI_DFLOAT,
-              levels[k].partner, rank, comm, request+0);
+    MPI_Isend(sendPtr, k*levels[l].Nsend, MPI_Type(type),
+              levels[l].partner, rank, comm, request+0);
+    MPI_Waitall(levels[l].Nmsg+1, request, status);
 
-    if (k==0) {
-      //zero extra section in halo buffer
-      if (gpu_aware) {
-        if (NhaloExt-Nhalo) {
-          const dfloat zero = 0.0;
-          setKernel(NhaloExt-Nhalo, zero, o_haloBuf+Nhalo*Nbytes);
-        }
-      } else {
-        for (int n=Nhalo;n<NhaloExt;n++)
-          ((dfloat*)haloBuf)[n] = 0.0;
-      }
-    }
+    //rotate buffers
+    o_recvBuf = o_buf[(buf_id+0)%2];
+    o_haloBuf = o_buf[(buf_id+1)%2];
+    recvBuf = buf[(buf_id+0)%2];
+    haloBuf = buf[(buf_id+1)%2];
+    buf_id = (buf_id+1)%2;
 
-    MPI_Waitall(levels[k].Nmsg+1, request, status);
-
-    //Scatter the recv buffer into the haloBuffer
-    if (levels[k].Nmsg>0) {
-      if (gpu_aware) {
-        if (levels[k].Nrecv0) {
-          injectKernel(levels[k].Nrecv0, levels[k].o_recvIds0,
-                       o_recvBuf, o_haloBuf);
-        }
-      } else {
-        for (int n=0;n<levels[k].Nrecv0;n++) {
-          ((dfloat*)haloBuf)[levels[k].recvIds0[n]] += ((dfloat*)rBufPtr)[n];
-        }
-      }
-    }
-    if (levels[k].Nmsg==2) {
-      if (gpu_aware) {
-        if (levels[k].Nrecv1) {
-          injectKernel(levels[k].Nrecv1, levels[k].o_recvIds1,
-                       o_recvBuf + levels[k].Nrecv0*Nbytes, o_haloBuf);
-        }
-      } else {
-        for (int n=0;n<levels[k].Nrecv1;n++) {
-          ((dfloat*)haloBuf)[levels[k].recvIds1[n]] += ((dfloat*)rBufPtr)[n+levels[k].Nrecv0];
-        }
-      }
+    //Gather the recv'd values into the haloBuffer
+    if (gpu_aware) {
+      levels[l].gather->Gather(o_haloBuf, o_recvBuf,
+                               k, type, op, Trans);
+    } else {
+      levels[l].gather->Gather(haloBuf, recvBuf,
+                               k, type, op, Trans);
     }
   }
 
-  if (scatterHalo->Ncols) {
-    if (!gpu_aware) {
+  N = (trans == Trans) ? NhaloP : Nhalo;
+  if (N) {
+    if (!gpu_aware && !host) {
       // copy recv back to device
-      device.setStream(dataStream);
-      o_haloBuf.copyFrom(haloBuf, scatterHalo->Ncols*Nbytes, 0, "async: true");
-      if (!overlap) device.finish(); //wait for transfer to finish if not overlapping halo kernel
-    }
-
-    //if overlapping the halo kernels, switch streams
-    if (overlap) {
-      device.setStream(dataStream);
-    } else {
-      device.finish();
-      device.setStream(currentStream);
-    }
-
-    scatterHalo->Apply(o_v, o_haloBuf);
-
-    if (overlap) { //if overlapping halo kernels wait for kernel to finish
-      device.finish();
+      o_haloBuf.copyFrom(haloBuf, N*Nbytes, 0, "async: true");
+      device.finish(); //wait for transfer to finish
     }
   }
 
@@ -212,32 +188,15 @@ void ogsCrystalRouter_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap)
  * the halo nodes are scattered back to the output array.
  */
 
-ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
-                             parallelNode_t* recvNodes,
-                             dlong NgatherLocal,
-                             ogsGather_t *_gatherHalo,
-                             dlong *indexMap,
-                             MPI_Comm _comm,
-                             platform_t &_platform):
-  platform(_platform), comm(_comm) {
+ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
+                                       parallelNode_t* sharedNodes,
+                                       ogsOperator_t *gatherHalo,
+                                       MPI_Comm _comm,
+                                       platform_t &_platform):
+  ogsExchange_t(_platform,_comm) {
 
-  MPI_Comm_rank(comm, &rank);
-  MPI_Comm_size(comm, &size);
-
-  std::sort(recvNodes, recvNodes+recvN,
-            [](const parallelNode_t& a, const parallelNode_t& b) {
-              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
-              if(abs(a.baseId) > abs(b.baseId)) return false;
-
-              return a.baseId < b.baseId; //positive ids first
-            });
-
-  gatherHalo = _gatherHalo;
-  Nhalo    = _gatherHalo->Nrows;
-  NhaloExt = _gatherHalo->Nrows;
-
-  dlong N = recvN;
-  parallelNode_t *nodes = recvNodes;
+  NhaloP = gatherHalo->NrowsN;
+  Nhalo  = gatherHalo->NrowsT;
 
   //first count how many levels we need
   Nlevels = 0;
@@ -258,12 +217,48 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
     }
     Nlevels++;
   }
-  levels = new crLevel[Nlevels];
+  levelsN = new crLevel[Nlevels];
+  levelsT = new crLevel[Nlevels];
+
 
   //Now build the levels
   Nlevels = 0;
   np = size;
   np_offset=0;
+
+  dlong N = Nshared + Nhalo;
+  parallelNode_t *nodes = (parallelNode_t*)
+                        malloc(N*sizeof(parallelNode_t));
+
+  //setup is easier if we include copies of the nodes we own
+  // in the list of shared nodes
+  for(dlong n=0;n<Nhalo;++n) {
+    nodes[n].newId = n;
+    nodes[n].sign  = (n<NhaloP) ? 2 : -2;
+    nodes[n].baseId = 0;
+    nodes[n].rank = rank;
+  }
+  for(dlong n=0;n<Nshared;++n) {
+    const dlong newId = sharedNodes[n].newId;
+    if (nodes[newId].baseId==0) {
+      if (newId<NhaloP)
+        nodes[newId].baseId = abs(sharedNodes[n].baseId);
+      else
+        nodes[newId].baseId = -abs(sharedNodes[n].baseId);
+    }
+  }
+  for(dlong n=Nhalo;n<N;++n) nodes[n] = sharedNodes[n-Nhalo];
+
+  std::sort(nodes, nodes+N,
+            [](const parallelNode_t& a, const parallelNode_t& b) {
+              return a.newId < b.newId; //group by newId (which also groups by abs(baseId))
+            });
+
+  dlong haloBuf_size = Nhalo;
+
+  dlong NhaloExtT = Nhalo;
+  dlong NhaloExtN = Nhalo;
+
   while (np>1) {
     int np_half = (np+1)/2;
     int r_half = np_half + np_offset;
@@ -279,8 +274,10 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
     if (np&1 && rank==r_half) {
       Nmsg=2;
     }
-    levels[Nlevels].partner = partner;
-    levels[Nlevels].Nmsg = Nmsg;
+    levelsN[Nlevels].partner = partner;
+    levelsT[Nlevels].partner = partner;
+    levelsN[Nlevels].Nmsg = Nmsg;
+    levelsT[Nlevels].Nmsg = Nmsg;
 
     //count lo/hi nodes
     dlong Nlo=0, Nhi=0;
@@ -321,47 +318,79 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
         hiNodes[Nhi++] = nodes[n];
     }
 
-    if (np!=size) free(nodes);
+    //free up space
+    free(nodes);
+
+    //point to the buffer we keep after the comms
     nodes = is_lo ? loNodes : hiNodes;
     N     = is_lo ? Nlo+Nrecv : Nhi+Nrecv;
 
-    int offset = is_lo ? Nlo : Nhi;
+    const int offset = is_lo ? Nlo : Nhi;
     parallelNode_t *sendNodes = is_lo ? hiNodes : loNodes;
 
     //count how many entries from the halo buffer we're sending
-    int NentriesSend=0;
+    int NentriesSendN=0;
+    int NentriesSendT=0;
     for (dlong n=0;n<Nsend;n++) {
       if (n==0 || abs(sendNodes[n].baseId)!=abs(sendNodes[n-1].baseId)) {
-        NentriesSend++;
+        if (sendNodes[n].sign>0) NentriesSendN++;
+        NentriesSendT++;
       }
     }
-    levels[Nlevels].Nsend = NentriesSend;
-    levels[Nlevels].sendIds = (dlong *) malloc(NentriesSend*sizeof(dlong));
+    levelsN[Nlevels].Nsend = NentriesSendN;
+    levelsT[Nlevels].Nsend = NentriesSendT;
+    levelsN[Nlevels].sendIds = (dlong *) malloc(NentriesSendN*sizeof(dlong));
+    levelsT[Nlevels].sendIds = (dlong *) malloc(NentriesSendT*sizeof(dlong));
 
-    NentriesSend=0; //reset
+    NentriesSendN=0; //reset
+    NentriesSendT=0; //reset
     for (dlong n=0;n<Nsend;n++) {
       if (n==0 || abs(sendNodes[n].baseId)!=abs(sendNodes[n-1].baseId)) {
-        levels[Nlevels].sendIds[NentriesSend++] = sendNodes[n].localId;
-        // printf("rank %d, Send %d LocalId %d BaseId %d \n", rank, NentriesSend-1, sendNodes[n].localId, sendNodes[n].baseId);
+        if (sendNodes[n].sign>0)
+          levelsN[Nlevels].sendIds[NentriesSendN++] = sendNodes[n].newId;
+
+        levelsT[Nlevels].sendIds[NentriesSendT++] = sendNodes[n].newId;
       }
-      sendNodes[n].localId = -1; //wipe the localId before sending
+      sendNodes[n].newId = -1; //wipe the newId before sending
     }
-    levels[Nlevels].o_sendIds = platform.malloc(NentriesSend*sizeof(dlong),
-                                                levels[Nlevels].sendIds);
+    levelsT[Nlevels].o_sendIds = platform.malloc(NentriesSendT*sizeof(dlong),
+                                                levelsT[Nlevels].sendIds);
+    levelsN[Nlevels].o_sendIds = platform.malloc(NentriesSendN*sizeof(dlong),
+                                                levelsN[Nlevels].sendIds);
 
     //share the entry count with our partner
-    MPI_Isend(&NentriesSend, 1, MPI_INT, partner, rank, comm, request+0);
+    MPI_Isend(&NentriesSendT, 1, MPI_INT, partner, rank, comm, request+0);
 
-    int NentriesRecv0=0, NentriesRecv1=0;
+    int NentriesRecvT0=0, NentriesRecvT1=0;
     if (Nmsg>0)
-      MPI_Irecv(&NentriesRecv0, 1, MPI_INT, partner, partner, comm, request+1);
+      MPI_Irecv(&NentriesRecvT0, 1, MPI_INT, partner, partner, comm, request+1);
     if (Nmsg==2)
-      MPI_Irecv(&NentriesRecv1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+      MPI_Irecv(&NentriesRecvT1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
 
     MPI_Waitall(Nmsg+1, request, status);
 
-    levels[Nlevels].Nrecv0 = NentriesRecv0;
-    levels[Nlevels].Nrecv1 = NentriesRecv1;
+    levelsT[Nlevels].Nrecv0 = NentriesRecvT0;
+    levelsT[Nlevels].Nrecv1 = NentriesRecvT1;
+    levelsT[Nlevels].recvOffset = NhaloExtT;
+
+    MPI_Isend(&NentriesSendN, 1, MPI_INT, partner, rank, comm, request+0);
+
+    int NentriesRecvN0=0, NentriesRecvN1=0;
+    if (Nmsg>0)
+      MPI_Irecv(&NentriesRecvN0, 1, MPI_INT, partner, partner, comm, request+1);
+    if (Nmsg==2)
+      MPI_Irecv(&NentriesRecvN1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+
+    MPI_Waitall(Nmsg+1, request, status);
+
+    levelsN[Nlevels].Nrecv0 = NentriesRecvN0;
+    levelsN[Nlevels].Nrecv1 = NentriesRecvN1;
+    levelsN[Nlevels].recvOffset = NhaloExtN;
+
+    //space needed in recv buffer for this level
+    dlong buf_size = NhaloExtT + NentriesRecvT0 + NentriesRecvT1;
+    haloBuf_size = (buf_size > haloBuf_size) ? buf_size : haloBuf_size;
+
 
     //send half the list to our partner
     MPI_Isend(sendNodes, Nsend,
@@ -381,10 +410,11 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
 
     //We now have a list of nodes who's destinations are in our half
     // of the hypercube
-    //We now build the scatter into the haloBuffer
+    //We now build the gather into the haloBuffer
 
-    //record the current order in newId
-    for (dlong n=0;n<N;n++) nodes[n].newId = n;
+
+    //record the current order
+    for (dlong n=0;n<N;n++) nodes[n].localId = n;
 
     //sort the new node list by baseId to find matches
     std::sort(nodes, nodes+N,
@@ -392,58 +422,255 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
               if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
               if(abs(a.baseId) > abs(b.baseId)) return false;
 
-              return a.localId > b.localId; //positive localIds first
+              return a.newId > b.newId; //positive newIds first
             });
 
-    //fill localIds of new entries if possible, or give them an index
-    dlong id = 0;
-    for (dlong n=0;n<N;n++) {
+    //find how many positive ids there will be in the extended halo
+    dlong start = 0;
+    NhaloExtN=0;
+    NhaloExtT=0;
+    for (dlong n=0;n<N;++n) {
       //for each baseId group
-      if (n==0 || (abs(nodes[n].baseId)!=abs(nodes[n-1].baseId))) {
-        id = nodes[n].localId; //get localId
-        //no non-empty localId, must be a new node
-        if (id==-1) id = NhaloExt++;
+      if (n==N-1 || (abs(nodes[n].baseId)!=abs(nodes[n+1].baseId))) {
+        dlong end = n+1;
+        const dlong id = nodes[start].newId; //get Id
+
+        //if this id is in the extended halo already,
+        // or if it is a new baseId to arrive, look for
+        // a positive node
+        if (id >= Nhalo || id==-1) {
+          for (dlong i=start;i<end;++i) {
+            if (nodes[i].sign>0) {
+              NhaloExtN++;
+              break;
+            }
+          }
+          NhaloExtT++;
+        }
+        start = end;
       }
-      nodes[n].localId = id;
+    }
+
+
+    //make an index map to save the original extended halo ids
+    dlong *indexMap = (dlong*) malloc(NhaloExtT*sizeof(dlong));
+
+    //fill newIds of new entries if possible, or give them an index
+    NhaloExtT = Nhalo + NhaloExtN;
+    NhaloExtN = Nhalo;
+    start = 0;
+    for (dlong n=0;n<N;++n) {
+      //for each baseId group
+      if (n==N-1 || (abs(nodes[n].baseId)!=abs(nodes[n+1].baseId))) {
+        dlong end = n+1;
+
+        dlong id = nodes[start].newId; //get Id
+
+        //if this id is in the extended halo already,
+        // or if it is a new baseId to arrive, give it
+        // a new id in the extended halo
+        if (id >= Nhalo || id==-1) {
+          int sign = -2;
+          for (dlong i=start;i<end;++i) {
+            if (nodes[i].sign>0) {
+              sign = nodes[i].sign;
+              break;
+            }
+          }
+
+          if (sign>0)
+            id = NhaloExtN++;
+          else
+            id = NhaloExtT++;
+
+          //save the orignal id
+          indexMap[id-Nhalo] = nodes[start].newId;
+        }
+
+        //write id into this baseId group
+        for (dlong i=start;i<end;++i)
+          nodes[i].newId = id;
+
+        start = end;
+      }
     }
 
     //sort back to first ordering
-    std::sort(nodes, nodes+N,
-            [](const parallelNode_t& a, const parallelNode_t& b) {
-              return a.newId < b.newId;
-            });
+    permute(N, nodes, [](const parallelNode_t& a) { return a.localId; } );
 
-    if (Nmsg>0) {
-      levels[Nlevels].recvIds0 = (dlong *) malloc(NentriesRecv0*sizeof(dlong));
-      NentriesRecv0=0;
-      for (dlong n=offset;n<offset+Nrecv0;n++) {
-        if (n==offset || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
-          levels[Nlevels].recvIds0[NentriesRecv0++] = nodes[n].localId;
+    ogsOperator_t *gatherN = new ogsOperator_t(platform);
+    ogsOperator_t *gatherT = new ogsOperator_t(platform);
+
+    gatherN->kind = Unsigned;
+    gatherT->kind = Unsigned;
+
+    gatherN->NrowsN = NhaloExtN;
+    gatherN->NrowsT = NhaloExtN;
+    gatherN->Ncols  = levelsN[Nlevels].recvOffset
+                      + NentriesRecvN0 + NentriesRecvN1;
+
+    gatherT->NrowsN = NhaloExtT;
+    gatherT->NrowsT = NhaloExtT;
+    gatherT->Ncols  = levelsT[Nlevels].recvOffset
+                      + NentriesRecvT0 + NentriesRecvT1;
+
+    gatherT->rowStartsT = (dlong*) calloc(gatherT->NrowsT+1,sizeof(dlong));
+    gatherT->rowStartsN = gatherT->rowStartsT;
+
+    gatherN->rowStartsT = (dlong*) calloc(gatherT->NrowsT+1,sizeof(dlong));
+    gatherN->rowStartsN = gatherN->rowStartsT;
+
+    //gatherT the existing halo
+    for (dlong n=0;n<Nhalo;++n) gatherT->rowStartsT[n+1]=1;
+
+    //for notrans theres nothing to gather in the negative nodes the first time
+    if (np==size)
+      for (dlong n=0;n<NhaloP;++n) gatherN->rowStartsT[n+1]=1;
+    else
+      for (dlong n=0;n<Nhalo;++n) gatherN->rowStartsT[n+1]=1;
+
+    //look through the nodes we still have for extended halo nodes
+    for (dlong n=0;n<offset;++n) {
+      if (n==0 || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+        const dlong id = nodes[n].newId;
+        if (nodes[n].newId >= Nhalo) {
+          if (nodes[n].sign >0) gatherN->rowStartsT[id+1]++;
+          gatherT->rowStartsT[id+1]++;
         }
       }
-      levels[Nlevels].o_recvIds0 = platform.malloc(NentriesRecv0*sizeof(dlong),
-                                                levels[Nlevels].recvIds0);
     }
-    if (Nmsg==2) {
-      levels[Nlevels].recvIds1 = (dlong *) malloc(NentriesRecv1*sizeof(dlong));
-      NentriesRecv1=0;
-      for (dlong n=offset+Nrecv0;n<N;n++) {
-        if (n==offset+Nrecv0 || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
-          levels[Nlevels].recvIds1[NentriesRecv1++] = nodes[n].localId;
+
+    //look through first message for nodes to gather
+    for (dlong n=offset;n<offset+Nrecv0;++n) {
+      if (n==offset || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+        const dlong id = nodes[n].newId;
+        if (nodes[n].sign >0) gatherN->rowStartsT[id+1]++;
+        gatherT->rowStartsT[id+1]++;
+      }
+    }
+    //look through second message for nodes to gather
+    for (dlong n=offset+Nrecv0;n<N;++n) {
+      if (n==offset+Nrecv0 || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+        const dlong id = nodes[n].newId;
+        if (nodes[n].sign >0) gatherN->rowStartsT[id+1]++;
+        gatherT->rowStartsT[id+1]++;
+      }
+    }
+
+    for (dlong i=0;i<gatherT->NrowsT;i++) {
+      gatherT->rowStartsT[i+1] += gatherT->rowStartsT[i];
+      gatherN->rowStartsT[i+1] += gatherN->rowStartsT[i];
+    }
+
+    gatherT->nnzT = gatherT->rowStartsT[gatherT->NrowsT];
+    gatherT->nnzN = gatherT->rowStartsT[gatherT->NrowsT];
+
+    gatherT->colIdsT = (dlong*) calloc(gatherT->nnzT,sizeof(dlong));
+    gatherT->colIdsN = gatherT->colIdsT;
+
+    gatherN->nnzT = gatherN->rowStartsT[gatherN->NrowsT];
+    gatherN->nnzN = gatherN->rowStartsT[gatherN->NrowsT];
+
+    gatherN->colIdsT = (dlong*) calloc(gatherN->nnzT,sizeof(dlong));
+    gatherN->colIdsN = gatherN->colIdsT;
+
+    //gatherT the existing halo
+    for (dlong n=0;n<Nhalo;++n) {
+      gatherT->colIdsT[gatherT->rowStartsT[n]++] = n;
+    }
+
+    if (np==size) {
+      for (dlong n=0;n<NhaloP;++n) {
+        gatherN->colIdsT[gatherN->rowStartsT[n]++] = n;
+      }
+    } else {
+      for (dlong n=0;n<Nhalo;++n) {
+        gatherN->colIdsT[gatherN->rowStartsT[n]++] = n;
+      }
+    }
+
+    //look through the nodes we still have for extended halo nodes
+    for (dlong n=0;n<offset;++n) {
+      if (n==0 || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+        const dlong id = nodes[n].newId;
+        if (nodes[n].newId >= Nhalo) {
+          if (nodes[n].sign > 0) {
+            gatherN->colIdsT[gatherN->rowStartsT[id]++] = indexMap[id-Nhalo];
+          }
+          gatherT->colIdsT[gatherT->rowStartsT[id]++] = indexMap[id-Nhalo];
         }
       }
-      levels[Nlevels].o_recvIds1 = platform.malloc(NentriesRecv1*sizeof(dlong),
-                                                levels[Nlevels].recvIds1);
     }
 
-    //sort the new node list by baseId
+    free(indexMap);
+
+    dlong NentriesRecvN=levelsN[Nlevels].recvOffset;
+    dlong NentriesRecvT=levelsT[Nlevels].recvOffset;
+    //look through first message for nodes to gatherT
+    for (dlong n=offset;n<offset+Nrecv0;++n) {
+      if (n==offset || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+        const dlong id = nodes[n].newId;
+        if (nodes[n].sign > 0) {
+          gatherN->colIdsT[gatherN->rowStartsT[id]++] = NentriesRecvN++;
+        }
+        gatherT->colIdsT[gatherT->rowStartsT[id]++] = NentriesRecvT++;
+      }
+    }
+    //look through second message for nodes to gatherT
+    for (dlong n=offset+Nrecv0;n<N;++n) {
+      if (n==offset+Nrecv0 || abs(nodes[n].baseId)!=abs(nodes[n-1].baseId)) {
+        const dlong id = nodes[n].newId;
+        if (nodes[n].sign > 0) {
+          gatherN->colIdsT[gatherN->rowStartsT[id]++] = NentriesRecvN++;
+        }
+        gatherT->colIdsT[gatherT->rowStartsT[id]++] = NentriesRecvT++;
+      }
+    }
+
+    //reset row starts
+    for (dlong i=gatherT->NrowsT;i>0;--i) {
+      gatherT->rowStartsT[i] = gatherT->rowStartsT[i-1];
+      gatherN->rowStartsT[i] = gatherN->rowStartsT[i-1];
+    }
+    gatherT->rowStartsT[0] = 0;
+    gatherN->rowStartsT[0] = 0;
+
+    gatherT->o_rowStartsT = platform.malloc((gatherT->NrowsT+1)*sizeof(dlong), gatherT->rowStartsT);
+    gatherT->o_rowStartsN = gatherT->o_rowStartsT;
+    gatherN->o_rowStartsT = platform.malloc((gatherN->NrowsT+1)*sizeof(dlong), gatherN->rowStartsT);
+    gatherN->o_rowStartsN = gatherN->o_rowStartsT;
+    gatherT->o_colIdsT = platform.malloc((gatherT->nnzT)*sizeof(dlong), gatherT->colIdsT);
+    gatherT->o_colIdsN = gatherT->o_colIdsT;
+    gatherN->o_colIdsT = platform.malloc((gatherN->nnzT)*sizeof(dlong), gatherN->colIdsT);
+    gatherN->o_colIdsN = gatherN->o_colIdsT;
+
+    levelsT[Nlevels].gather = gatherT;
+    levelsN[Nlevels].gather = gatherN;
+
+    //sort the new node list by newId
     std::sort(nodes, nodes+N,
             [](const parallelNode_t& a, const parallelNode_t& b) {
-              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
-              if(abs(a.baseId) > abs(b.baseId)) return false;
-
-              return a.baseId < b.baseId; //positive ids first
+              return a.newId < b.newId; //group by newId (which also groups by abs(baseId))
             });
+
+    //propagate the sign of recvieved nodes
+    start = 0;
+    for (dlong n=0;n<N;++n) {
+      //for each baseId group
+      if (n==N-1 || (abs(nodes[n].baseId)!=abs(nodes[n+1].baseId))) {
+        dlong end = n+1;
+        //look for a positive sign, so we know if this node flips positive
+        for (dlong i=start;i<end;++i) {
+          const int sign = nodes[i].sign;
+          if (sign>0) {
+            for (dlong j=start;j<end;++j)
+              nodes[j].sign = sign;
+            break;
+          }
+        }
+        start = end;
+      }
+    }
 
     //Shrink the size of the hypercube
     if (is_lo) {
@@ -458,49 +685,47 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong recvN,
 
   NsendMax=0, NrecvMax=0;
   for (int k=0;k<Nlevels;k++) {
-    int Nsend = levels[k].Nsend;
+    int Nsend = levelsT[k].Nsend;
     NsendMax = (Nsend>NsendMax) ? Nsend : NsendMax;
-    int Nrecv = levels[k].Nrecv0 + levels[k].Nrecv1;
+    int Nrecv = levelsT[k].recvOffset
+                + levelsT[k].Nrecv0 + levelsT[k].Nrecv1;
     NrecvMax = (Nrecv>NrecvMax) ? Nrecv : NrecvMax;
   }
 
-  gatherHalo->setupRowBlocks(platform);
-  scatterHalo = new ogsScatter_t(gatherHalo, platform);
-
   //make scratch space
-  reallocOccaBuffer(sizeof(dfloat));
+  AllocBuffer(Sizeof(Dfloat));
 }
 
-void ogsCrystalRouter_t::reallocOccaBuffer(size_t Nbytes) {
-  if (o_haloBuf.size() < NhaloExt*Nbytes) {
-    if (o_haloBuf.size()) o_haloBuf.free();
-    haloBuf = platform.hostMalloc(NhaloExt*Nbytes,  nullptr, h_haloBuf);
-    o_haloBuf = platform.malloc(NhaloExt*Nbytes);
-  }
+void ogsCrystalRouter_t::AllocBuffer(size_t Nbytes) {
+
   if (o_sendBuf.size() < NsendMax*Nbytes) {
-    if (o_sendBuf.size()) o_sendBuf.free();
     sendBuf = platform.hostMalloc(NsendMax*Nbytes,  nullptr, h_sendBuf);
     o_sendBuf = platform.malloc(NsendMax*Nbytes);
   }
-  if (o_recvBuf.size() < NrecvMax*Nbytes) {
-    if (o_recvBuf.size()) o_recvBuf.free();
-    recvBuf = platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_recvBuf);
-    o_recvBuf = platform.malloc(NrecvMax*Nbytes);
+  if (o_buf[0].size() < NrecvMax*Nbytes) {
+    buf[0] = (char*)platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_buf[0]);
+    buf[1] = (char*)platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_buf[1]);
+    haloBuf = buf[0];
+    recvBuf = buf[1];
+
+    o_buf[0] = platform.malloc(NrecvMax*Nbytes);
+    o_buf[1] = platform.malloc(NrecvMax*Nbytes);
+    o_haloBuf = o_buf[0];
+    o_recvBuf = o_buf[1];
+    buf_id=0;
   }
 }
 
 ogsCrystalRouter_t::~ogsCrystalRouter_t() {
-  // if(gatherHalo) gatherHalo->Free();
-  // if(scatterHalo) scatterHalo->Free();
+  if(levelsN) {delete[] levelsN; levelsN = nullptr;}
+  if(levelsT) {delete[] levelsT; levelsT = nullptr;}
 
-  if(levels) delete[] levels;
-
-  if(o_haloBuf.size()) o_haloBuf.free();
-  if(h_haloBuf.size()) h_haloBuf.free();
+  if(o_buf[0].size()) o_buf[0].free();
+  if(o_buf[1].size()) o_buf[1].free();
+  if(h_buf[0].size()) h_buf[0].free();
+  if(h_buf[1].size()) h_buf[1].free();
   if(o_sendBuf.size()) o_sendBuf.free();
-  if(o_recvBuf.size()) o_recvBuf.free();
   if(h_sendBuf.size()) h_sendBuf.free();
-  if(h_recvBuf.size()) h_recvBuf.free();
 }
 
 } //namespace ogs

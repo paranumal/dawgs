@@ -69,23 +69,15 @@ void factor3(const int size, int &size_x, int &size_y, int &size_z) {
   size_y = size_z = 1;
 }
 
-void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
-                     dfloat *qtest, dfloat *qcheck, hlong* ids,
-                     ogs::ogs_t &ogs, const ogs::ogs_method method,
-                     bool gpu_aware, bool overlap, MPI_Comm comm) {
-  int rank = ogs.platform.rank;
+void CorrectnessTest(const int N, dfloat *qtest, dfloat *qcheck,
+                     const hlong *ids, const string testName, MPI_Comm comm) {
 
-  o_q.copyFrom(q);
-
-  //call a gatherScatter operation
-  ogs.GatherScatter(o_q, method, gpu_aware, overlap);
-
-  //copy back to host
-  o_q.copyTo(qtest);
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   for (dlong n=0;n<N;n++) {
     if (fabs(qtest[n]-qcheck[n])>0.0) {
-      printf("Rank %d, Entry %d, baseId %lld Error= %f \n", rank, n, ids[n], fabs(qtest[n]-qcheck[n]));
+      printf("Rank %d, Entry %d, baseId %lld q = %f, qRef = %f \n", rank, n, ids[n], qtest[n], qcheck[n]);
     }
   }
 
@@ -96,24 +88,11 @@ void CorrectnessTest(const int N, dfloat *q, occa::memory &o_q,
   MPI_Reduce(&err, &errG, 1, MPI_DFLOAT, MPI_SUM, 0, comm);
 
   if (rank==0) {
-    if (method==ogs::ogs_all_reduce)
-      std::cout << "AllToAll Method ";
-    else if (method==ogs::ogs_pairwise)
-      std::cout << "Pairwise Method ";
-    else
-      std::cout << "Crystal Router Method ";
-
-    if (gpu_aware)
-      std::cout << ", GPU-aware ";
-
-    if (overlap)
-      std::cout << ", Halo Kernel Overlap ";
-
-    std::cout << ", Error = " << errG << std::endl;
+    std::cout << testName << ": Error = " << errG << std::endl;
   }
 }
 
-
+/*
 void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
                      occa::memory &o_q, ogs::ogs_t &ogs,
                      const ogs::ogs_method method,
@@ -179,6 +158,7 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
     }
   }
 }
+*/
 
 void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
           const dlong nx, const dlong ny, const dlong nz,
@@ -203,8 +183,8 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   int rank_x = rank % size_x;
 
   //parse GPU-aware setting from cmd line
-  bool gpu_aware;
-  gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
+  // bool gpu_aware;
+  // gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
 
   if (settings.compareSetting("VERBOSE", "TRUE"))
     settings.report();
@@ -262,24 +242,33 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   ogs::ogs_t ogs(platform);
 
   int verbose = 1;
-  ogs.Setup(Nelements*Np, ids, comm, verbose);
+  bool unique = false;
+  ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+            ogs::Auto, unique, verbose);
+
+  // for (int n=0; n<Nelements*Np;++n) {
+  //   std::cout << "rank " << rank << " id[" << n << "] = " << ids[n] << std::endl;
+  // }
+
+  int K = 1;
 
   //make an array
-  dfloat *q = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
+  dfloat *q = (dfloat *) malloc(K*Nelements*Np*sizeof(dfloat));
 
   //fill with ones
-  for (dlong n=0;n<Nelements*Np;n++) q[n]=1.0;
+  for (dlong n=0;n<K*Nelements*Np;n++) q[n]=1.0;
 
   //make a device array o_q, copying q from host on creation
-  occa::memory o_q = platform.malloc(Nelements*Np*sizeof(dfloat), q);
+  occa::memory o_q = platform.malloc(K*Nelements*Np*sizeof(dfloat), q);
 
 
-  if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
+  // if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
     /*************************
      * Test correctness
      *************************/
     //make a host gs handle (calls gslib)
-    void *gsHandle = gsSetup(comm, Nelements*Np, ids, 0, 0);
+    int iunique = 0;
+    void *gsHandle = gsSetup(comm, Nelements*Np, ids, iunique, verbose);
 
     if (rank==0) {
       std::cout << "Ranks = " << size << ", ";
@@ -288,66 +277,42 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
       std::cout << "Degree = " << N << std::endl;
     }
 
-    //populate an array with the result we expect
-    dfloat *qcheck = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
 
-    for (dlong n=0;n<Nelements*Np;n++) qcheck[n] = q[n];
+    //populate an array with the result we expect
+    dfloat *qcheck = (dfloat *) malloc(K*Nelements*Np*sizeof(dfloat));
+
+    for (dlong n=0;n<K*Nelements*Np;n++) qcheck[n] = q[n];
 
     //make the golden result
-    gsGatherScatter(qcheck, gsHandle);
+    int transpose = 0;
+    gsGatherScatterVec(qcheck, K, gsHandle, transpose);
 
-    dfloat *qtest = (dfloat *) malloc(Nelements*Np*sizeof(dfloat));
+    dfloat *qtest = (dfloat *) malloc(K*Nelements*Np*sizeof(dfloat));
 
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, false, false, comm);
+    for (dlong n=0;n<K*Nelements*Np;n++) qtest[n] = q[n];
 
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_pairwise, false, false, comm);
+    occa::memory o_gq = platform.malloc(K*ogs.Ngather*sizeof(dfloat));
+    dfloat* gq = (dfloat *) malloc(K*ogs.Ngather*sizeof(dfloat));
 
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_crystal_router, false, false, comm);
+    //call a gatherScatter operation
+    // ogs.GatherScatter(qtest, ogs::Dfloat, ogs::Trans);
+    // ogs.Gather (gq,     q, ogs::Dfloat, ogs::Trans);
+    // ogs.Scatter(qtest, gq, ogs::Dfloat, ogs::Trans);
 
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, false, true, comm);
+    o_q.copyFrom(q);
+    ogs.GatherScatter(o_q, K, ogs::Dfloat, ogs::Add, ogs::Sym);
+    // ogs.Gather (o_gq, o_q, K, ogs::Dfloat, ogs::Add, ogs::Trans);
+    // ogs.Scatter(o_q, o_gq, K, ogs::Dfloat, ogs::Add, ogs::Trans);
+    o_q.copyTo(qtest);
 
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_pairwise, false, true, comm);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "GatherScatter", comm);
 
-    CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_crystal_router, false, true, comm);
+    dlong *GlobalToLocal = new dlong[Nelements*Np];
+    ogs.SetupGlobalToLocalMapping(GlobalToLocal);
 
-    if (gpu_aware) {
-      CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, true, false, comm);
-
-      CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck, ids,
-                      ogs, ogs::ogs_pairwise, true, false, comm);
-
-      CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck, ids,
-                      ogs, ogs::ogs_crystal_router, true, false, comm);
-
-      CorrectnessTest(Nelements*Np, q, o_q,
-                    qtest, qcheck, ids,
-                    ogs, ogs::ogs_all_reduce, true, true, comm);
-
-      CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck, ids,
-                      ogs, ogs::ogs_pairwise, true, true, comm);
-
-      CorrectnessTest(Nelements*Np, q, o_q,
-                      qtest, qcheck, ids,
-                      ogs, ogs::ogs_crystal_router, true, true, comm);
-    }
-
+    free(gq);
+#if 0
   } else {
     /*************************
      * Performance Test
@@ -397,6 +362,8 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
       PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, true, comm);
     }
   }
+#endif
+
 
   free(ids);
 }
@@ -414,8 +381,8 @@ int main(int argc, char **argv){
   // set up platform (wraps OCCA device)
   platform_t platform(settings);
 
-  //mkae an empty ogs object to trigger JIT kernel builds
-  ogs::ogs_t ogs0(platform);
+  //Trigger JIT kernel builds
+  ogs::InitializeKernels(platform, ogs_dfloat, ogs::Add);
 
   /*************************
    * Setup

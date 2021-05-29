@@ -1,4 +1,4 @@
-%{
+%{%
 files = {'data/summit/ref/weakscale_summitV100N1n2_ref.out';
          'data/summit/ref/weakscale_summitV100N1n4_ref.out';
          'data/summit/ref/weakscale_summitV100N1n6_ref.out';
@@ -8,13 +8,17 @@ files = {'data/summit/ref/weakscale_summitV100N1n2_ref.out';
          'data/summit/ref/weakscale_summitV100N6n36_ref.out';
          'data/summit/ref/weakscale_summitV100N8n48_ref.out'};
 %}
+
+%{
 files = {'data/redwood/ref/weakscale_redwoodMI100N1n2_ref.out';
          'data/redwood/ref/weakscale_redwoodMI100N1n4_ref.out';
          'data/redwood/ref/weakscale_redwoodMI100N2n8_ref.out';
          'data/redwood/ref/weakscale_redwoodMI100N3n12_ref.out';
          'data/redwood/ref/weakscale_redwoodMI100N4n16_ref.out';
          'data/redwood/ref/weakscale_redwoodMI100N5n20_ref.out';
-         'data/redwood/ref/weakscale_redwoodMI100N6n24_ref.out';};
+         'data/redwood/ref/weakscale_redwoodMI100N6n24_ref.out';
+         'data/redwood/ref/weakscale_redwoodMI100N7n28_ref.out';};
+%}
          
 Ndata=0;
 clear refdata;

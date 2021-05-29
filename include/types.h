@@ -36,7 +36,7 @@ SOFTWARE.
 #define dfloatString "float"
 #else
 #define dfloat double
-#define ogs_dfloat ogs_double
+#define ogs_dfloat ogs::Double
 #define MPI_DFLOAT MPI_DOUBLE
 #define dfloatFormat "%lf"
 #define dfloatString "double"
@@ -51,7 +51,7 @@ SOFTWARE.
 #define hlongString "int"
 #else
 #define hlong long long int
-#define ogs_hlong ogs_long_long
+#define ogs_hlong ogs::Int64
 #define MPI_HLONG MPI_LONG_LONG_INT
 #define hlongFormat "%lld"
 #define hlongString "long long int"
@@ -60,7 +60,7 @@ SOFTWARE.
 //device index data type
 #if 1
 #define dlong int
-#define ogs_dlong ogs_int
+#define ogs_dlong ogs::Int32
 #define MPI_DLONG MPI_INT
 #define dlongFormat "%d"
 #define dlongString "int"

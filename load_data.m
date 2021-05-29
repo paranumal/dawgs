@@ -1,4 +1,4 @@
-%{
+%{%
 files = {'data/summit/weakscale_summitV100N1n1.out';
          'data/summit/weakscale_summitV100N1n2.out';
          'data/summit/weakscale_summitV100N1n4.out';
@@ -9,6 +9,7 @@ files = {'data/summit/weakscale_summitV100N1n1.out';
          'data/summit/weakscale_summitV100N6n36.out';
          'data/summit/weakscale_summitV100N8n48.out'};
 %}
+%{
 files = {'data/redwood/weakscale_redwoodMI100N1n1.out';
          'data/redwood/weakscale_redwoodMI100N1n2.out';
          'data/redwood/weakscale_redwoodMI100N1n4.out';
@@ -18,7 +19,7 @@ files = {'data/redwood/weakscale_redwoodMI100N1n1.out';
          'data/redwood/weakscale_redwoodMI100N5n20.out';
          'data/redwood/weakscale_redwoodMI100N6n24.out';
          'data/redwood/weakscale_redwoodMI100N7n28.out'};
-         
+%}       
          
          
 Ndata=0;
@@ -91,7 +92,7 @@ for f=1:size(files,1)
     Nvec = str2num(NvecStr{size(NvecStr,2)});
     
     %skip Nvector hiding tests
-    if (Nvec~=0); continue; end;
+    %if (Nvec~=0); continue; end;
     
     timeStr = strsplit(splitline{7+offset});
     time = str2num(timeStr{size(timeStr,2)-1});

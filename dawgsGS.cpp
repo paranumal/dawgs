@@ -25,15 +25,19 @@ SOFTWARE.
 */
 
 #include "ogs.hpp"
-#include "ogs/ogsKernels.hpp"
 
 extern "C" {
 #include "gslib.h"
 }
 
 // MPI based gather scatter using libgs
-void gsGatherScatter(void* v, void *gsh){
-  gs(v, gs_double, gs_add, 1, (gs_data*)gsh, 0);
+void gsGatherScatter(void* v, void *gsh, int transpose){
+  gs(v, gs_double, gs_add, transpose, (gs_data*)gsh, 0);
+}
+
+// MPI based gather scatter using libgs
+void gsGatherScatterVec(void* v, int k, void *gsh, int transpose){
+  gs_vec(v, k, gs_double, gs_add, transpose, (gs_data*)gsh, 0);
 }
 
 //Setup a gslib struct

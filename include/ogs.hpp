@@ -33,9 +33,9 @@ SOFTWARE.
   	dlong N;
     hlong id[N];    // the hlong and dlong types are defined in "types.h"
     int verbose;
-    occa::device device
+    ogs_t ogs(platform);
     ...
-    ogs_t *ogs = ogs_t::Setup(N, id, comm, verbose, device);
+    ogs.Setup(N, id, comm, verbose, device);
 
   defines a partition of the set of (processor, local index) pairs,
     (p,i) \in S_j  iff   abs(id[i]) == j  on processor p
@@ -43,7 +43,7 @@ SOFTWARE.
     same id (=j).
   S_0 is treated specially --- it is ignored completely
     (i.e., when id[i] == 0, local index i does not participate in any
-    gather/scatter operation
+    gather/scatter operation)
   If id[i] on proc p is negative then the pair (p,i) is "flagged". This
   determines the non-symmetric behavior. For the simpler, symmetric case,
   all id's should be positive.
@@ -177,74 +177,170 @@ SOFTWARE.
 namespace ogs {
 
 /* type enum */
-typedef enum { ogs_float, ogs_double, ogs_int, ogs_long_long, ogs_type_n} ogs_type;
+typedef enum { Float, Double, Int32, Int64} Type;
+
+constexpr Type Dfloat = (std::is_same<double, dfloat>::value)
+                          ? Double : Float;
+constexpr Type Dlong  = (std::is_same<int32_t, dlong>::value)
+                          ? Int32 : Int64;
+constexpr Type Hlong  = (std::is_same<int32_t, hlong>::value)
+                          ? Int32 : Int64;
 
 /* operation enum */
-typedef enum { ogs_add, ogs_mul, ogs_max, ogs_min, ogs_op_n} ogs_op;
+typedef enum { Add, Mul, Max, Min} Op;
 
 /* transpose switch */
-typedef enum { ogs_sym, ogs_notrans, ogs_trans } ogs_transpose;
+typedef enum { Sym, NoTrans, Trans } Transpose;
 
 /* method switch */
-typedef enum { ogs_auto, ogs_pairwise, ogs_crystal_router, ogs_all_reduce} ogs_method;
+typedef enum { Auto, Pairwise, CrystalRouter, AllToAll} Method;
 
-//forward declarations
-class ogsGather_t;
-class ogsScatter_t;
-class ogsGatherScatter_t;
-class ogsExchange_t;
+/* kind enum */
+typedef enum { Unsigned, Signed, Halo} Kind;
 
-struct parallelNode_t;
+}
 
-// OCCA+gslib gather scatter
-class ogs_t {
+#include "ogs/ogsBase.hpp"
+
+namespace ogs {
+
+//pre-build kernels
+void InitializeKernels(platform_t& platform, const Type type, const Op op);
+
+// OCCA Gather Scatter
+class ogs_t : public ogsBase_t {
 public:
-  platform_t& platform;
-  MPI_Comm comm;
+  ogs_t(platform_t& _platform):
+   ogsBase_t(_platform) {}
 
-  dlong         N=0;
-  dlong         Nlocal=0;         //  number of local nodes
-  dlong         Nhalo=0;          //  number of halo nodes
-
-  dlong         Ngather=0;        //  total number of gather nodes
-  hlong         NgatherGlobal=0;  //  global number of gather nodes
-
-  ogs_t(platform_t& _platform);
-  ~ogs_t();
-
-  void Setup(dlong N, hlong *ids, MPI_Comm comm, int verbose);
+  void Setup(const dlong _N,
+             hlong *ids,
+             MPI_Comm _comm,
+             const Kind _kind,
+             const Method method,
+             const bool _unique,
+             const bool verbose);
   void Free();
 
-  static void Unique(hlong *ids, dlong _N, MPI_Comm _comm);
+  void SetupGlobalToLocalMapping(dlong *GlobalToLocal);
 
+  // host versions
+  void GatherScatter(void* v,
+                     const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans);
   // Synchronous device buffer versions
-  void GatherScatter    (occa::memory&  o_v, const ogs_method method,
-                         const bool gpu_aware, const bool overlap){
-    GatherScatterStart (o_v, method, gpu_aware, overlap);
-    GatherScatterFinish(o_v, method, gpu_aware, overlap);
-  }
-
+  void GatherScatter(occa::memory&  o_v,
+                     const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans);
   // Asynchronous device buffer versions
-  void GatherScatterStart     (occa::memory&  o_v, const ogs_method method,
-                               const bool gpu_aware, const bool overlap);
-  void GatherScatterFinish    (occa::memory&  o_v, const ogs_method method,
-                               const bool gpu_aware, const bool overlap);
+  void GatherScatterStart (occa::memory&  o_v,
+                           const int k,
+                           const Type type,
+                           const Op op,
+                           const Transpose trans);
+  void GatherScatterFinish(occa::memory&  o_v,
+                           const int k,
+                           const Type type,
+                           const Op op,
+                           const Transpose trans);
 
-private:
-  ogsGather_t *gatherLocal=nullptr;
-  ogsScatter_t *scatterLocal=nullptr;
+  // host versions
+  void Gather(void* gv,
+              const void* v,
+              const int k,
+              const Type type,
+              const Op op,
+              const Transpose trans);
+  // Synchronous device buffer versions
+  void Gather(occa::memory&  o_gv,
+              occa::memory&  o_v,
+              const int k,
+              const Type type,
+              const Op op,
+              const Transpose trans);
+  // Asynchronous device buffer versions
+  void GatherStart (occa::memory&  o_gv,
+                    occa::memory&  o_v,
+                    const int k,
+                    const Type type,
+                    const Op op,
+                    const Transpose trans);
+  void GatherFinish(occa::memory&  o_gv,
+                    occa::memory&  o_v,
+                    const int k,
+                    const Type type,
+                    const Op op,
+                    const Transpose trans);
 
-  ogsGatherScatter_t *gsLocalS=nullptr;
+  // host versions
+  void Scatter(void* v,
+               const void* gv,
+               const int k,
+               const Type type,
+               const Op op,
+               const Transpose trans);
+  // Synchronous device buffer versions
+  void Scatter(occa::memory&  o_v,
+               occa::memory&  o_gv,
+               const int k,
+               const Type type,
+               const Op op,
+               const Transpose trans);
+  // Asynchronous device buffer versions
+  void ScatterStart (occa::memory&  o_v,
+                     occa::memory&  o_gv,
+                     const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans);
+  void ScatterFinish(occa::memory&  o_v,
+                     occa::memory&  o_gv,
+                     const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans);
 
-  ogsGather_t *gatherHalo=nullptr;
-  ogsScatter_t *scatterHalo=nullptr;
+  friend class halo_t;
+};
 
-  ogsExchange_t *exchange_ar=nullptr;
-  ogsExchange_t *exchange_pw=nullptr;
-  ogsExchange_t *exchange_cr=nullptr;
+// OCCA Halo
+class halo_t : public ogsBase_t {
+public:
+  halo_t(platform_t& _platform):
+   ogsBase_t(_platform) {}
 
-  void LocalSetup(const dlong Nids, parallelNode_t* nodes,
-                  const dlong NbaseIds, dlong *indexMap);
+  bool gathered_halo=false;
+  dlong Nhalo=0;
+
+  void Setup(const dlong _N,
+             hlong *ids,
+             MPI_Comm _comm,
+             const Method method,
+             const bool verbose);
+
+  void SetupFromGather(ogs_t& ogs);
+
+  void Free();
+
+  // Host version
+  void Exchange(void  *v, const int k, const Type type);
+  // Synchronous device buffer version
+  void Exchange(occa::memory &o_v, const int k, const Type type);
+  // Asynchronous device buffer version
+  void ExchangeStart (occa::memory &o_v, const int k, const Type type);
+  void ExchangeFinish(occa::memory &o_v, const int k, const Type type);
+
+  // Host version
+  void Combine(void  *v, const int k, const Type type);
+  // Synchronous device buffer version
+  void Combine(occa::memory &o_v, const int k, const Type type);
+  // Asynchronous device buffer version
+  void CombineStart (occa::memory &o_v, const int k, const Type type);
+  void CombineFinish(occa::memory &o_v, const int k, const Type type);
 };
 
 } //namespace ogs

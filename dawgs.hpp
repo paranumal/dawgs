@@ -45,7 +45,8 @@ void *gsSetup(MPI_Comm meshComm,
               hlong *gatherGlobalNodes,
               int unique, int verbose);
 
-void gsGatherScatter(void* v, void *gsh);
+void gsGatherScatter(void* v, void *gsh, int transpose);
+void gsGatherScatterVec(void* v, int K, void *gsh, int transpose);
 
 #endif
 

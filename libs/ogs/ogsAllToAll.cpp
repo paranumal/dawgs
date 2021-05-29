@@ -25,283 +25,333 @@ SOFTWARE.
 */
 
 #include "ogs.hpp"
-#include "ogs/ogsKernels.hpp"
-#include "ogs/ogsGatherScatter.hpp"
+#include "ogs/ogsUtils.hpp"
 #include "ogs/ogsExchange.hpp"
 
 namespace ogs {
 
-void ogsAllToAll_t::Start(occa::memory& o_v, bool gpu_aware, bool overlap){
-
-  const size_t Nbytes = sizeof(dfloat);
-  reallocOccaBuffer(Nbytes);
+void ogsAllToAll_t::Start(const int k,
+                          const Type type,
+                          const Op op,
+                          const Transpose trans,
+                          const bool host){
 
   occa::device &device = platform.device;
 
   //get current stream
   occa::stream currentStream = device.getStream();
 
-  dlong Nsend = mpiSendOffsets[size];
+  const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
+  const dlong N     = (trans == NoTrans) ? NhaloP : Nhalo;
+
   if (Nsend) {
-    //if overlapping the halo kernels, switch streams
-    if (overlap)
-      device.setStream(dataStream);
-
-    // assemble mpi send buffer by gathering halo nodes and scattering
-    // them into the send buffer
-    sendS->Apply(o_sendBuf, o_v);
-
-    //if not overlapping, wait for kernel to finish on default stream
-    if (!overlap)
+    if (gpu_aware && !host) {
+      //if using gpu-aware mpi and exchanging device buffers,
+      //  assemble the send buffer on device
+      if (trans == NoTrans) {
+        extractKernel[type](NsendN, k, o_sendIdsN, o_haloBuf, o_sendBuf);
+      } else {
+        extractKernel[type](NsendT, k, o_sendIdsT, o_haloBuf, o_sendBuf);
+      }
+      //if not overlapping, wait for kernel to finish on default stream
       device.finish();
-
-    //if using gpu-aware mpi, queue the data movement into dataStream
-    if (!gpu_aware) {
+    } else if (!host) {
+      //if not using gpu-aware mpi and exchanging device buffers,
+      // move the halo buffer to the host
       device.setStream(dataStream);
-      o_sendBuf.copyTo(sendBuf, Nsend*Nbytes, 0, "async: true");
+      const size_t Nbytes = k*Sizeof(type);
+      o_haloBuf.copyTo(haloBuf, N*Nbytes, 0, "async: true");
+      device.setStream(currentStream);
     }
-
-    device.setStream(currentStream);
   }
 }
 
 
-void ogsAllToAll_t::Finish(occa::memory& o_v, bool gpu_aware, bool overlap){
+void ogsAllToAll_t::Finish(const int k,
+                           const Type type,
+                           const Op op,
+                           const Transpose trans,
+                           const bool host){
 
-  const size_t Nbytes = sizeof(dfloat);
+  const size_t Nbytes = k*Sizeof(type);
   occa::device &device = platform.device;
 
   //get current stream
   occa::stream currentStream = device.getStream();
 
-  dlong Nsend = mpiRecvOffsets[size];
-  if (Nsend) {
-    //synchronize data stream to ensure the send buffer is ready to send
+  const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
+
+  if (Nsend && !gpu_aware && !host) {
+    //synchronize data stream to ensure the host buffer is on the host
     device.setStream(dataStream);
     device.finish();
+    device.setStream(currentStream);
+  }
+
+  //if the halo data is on the host, extract the send buffer
+  if (host || !gpu_aware) {
+    if (trans == NoTrans)
+      extract(NsendN, k, type, sendIdsN, haloBuf, sendBuf);
+    else
+      extract(NsendT, k, type, sendIdsT, haloBuf, sendBuf);
   }
 
   char *sendPtr, *recvPtr;
-  if (gpu_aware) { //device pointer
+  if (gpu_aware && !host) { //device pointer
     sendPtr = (char*)o_sendBuf.ptr();
-    recvPtr = (char*)o_recvBuf.ptr();
+    recvPtr = (char*)o_haloBuf.ptr() + Nhalo*Nbytes;
   } else { //host pointer
     sendPtr = (char*)sendBuf;
-    recvPtr = (char*)recvBuf;
+    recvPtr = (char*)haloBuf + Nhalo*Nbytes;
+  }
+
+  sendOffsets[0] = 0;
+  recvOffsets[0] = 0;
+  if (trans==NoTrans) {
+    for (int r=0;r<size;++r) {
+      sendCounts[r] = k*mpiSendCountsN[r];
+      recvCounts[r] = k*mpiRecvCountsN[r];
+      sendOffsets[r+1] = k*mpiSendOffsetsN[r+1];
+      recvOffsets[r+1] = k*mpiRecvOffsetsN[r+1];
+    }
+  } else {
+    for (int r=0;r<size;++r) {
+      sendCounts[r] = k*mpiSendCountsT[r];
+      recvCounts[r] = k*mpiRecvCountsT[r];
+      sendOffsets[r+1] = k*mpiSendOffsetsT[r+1];
+      recvOffsets[r+1] = k*mpiRecvOffsetsT[r+1];
+    }
   }
 
   // collect everything needed with single MPI all to all
-  MPI_Alltoallv(sendPtr, mpiSendCounts, mpiSendOffsets, MPI_DFLOAT,
-                recvPtr, mpiRecvCounts, mpiRecvOffsets, MPI_DFLOAT,
+  MPI_Alltoallv(sendPtr, sendCounts, sendOffsets, MPI_Type(type),
+                recvPtr, recvCounts, recvOffsets, MPI_Type(type),
                 comm);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
-  dlong Nrecv = mpiRecvOffsets[size];
+  dlong Nrecv = recvOffsets[size];
   if (Nrecv) {
-    if (!gpu_aware) {
-      // copy recv back to device
-      device.setStream(dataStream);
-      o_recvBuf.copyFrom(recvBuf, Nrecv*Nbytes, 0, "async: true");
-      if (!overlap) device.finish(); //wait for transfer to finish if not overlapping halo kernel
-    }
+    if (!gpu_aware || host) {
+      //if not gpu-aware or recieved data is on the host,
+      // gather the recieved nodes
+      postmpi->Gather(haloBuf, haloBuf, k, type, op, trans);
 
-    //if overlapping the halo kernels, switch streams
-    if (overlap) {
-      device.setStream(dataStream);
+      if (!host) {
+        // copy recv back to device
+        device.setStream(dataStream);
+        const dlong N = (trans == Trans) ? NhaloP : Nhalo;
+        o_haloBuf.copyFrom(haloBuf, N*Nbytes, 0, "async: true");
+        device.finish(); //wait for transfer to finish
+        device.setStream(currentStream);
+      }
     } else {
-      device.setStream(currentStream);
-    }
-
-    recvS->Apply(o_v, o_recvBuf);
-
-    if (overlap) { //if overlapping halo kernels wait for kernel to finish
-      device.finish();
+      // gather the recieved nodes on device
+      postmpi->Gather(o_haloBuf, o_haloBuf, k, type, op, trans);
     }
   }
-
-  device.setStream(currentStream);
 }
 
-ogsAllToAll_t::ogsAllToAll_t(dlong recvN,
-                             parallelNode_t* recvNodes,
-                             dlong NgatherLocal,
-                             ogsGather_t *gatherHalo,
-                             dlong *indexMap,
+ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
+                             parallelNode_t* sharedNodes,
+                             ogsOperator_t *gatherHalo,
                              MPI_Comm _comm,
                              platform_t &_platform):
-  platform(_platform), comm(_comm) {
+  ogsExchange_t(_platform,_comm) {
 
-  MPI_Comm_rank(comm, &rank);
-  MPI_Comm_size(comm, &size);
+  Nhalo  = gatherHalo->NrowsT;
+  NhaloP = gatherHalo->NrowsN;
 
-  std::sort(recvNodes, recvNodes+recvN,
-            [](const parallelNode_t& a, const parallelNode_t& b) {
-              if(abs(a.baseId) < abs(b.baseId)) return true; //group by abs(baseId)
-              if(abs(a.baseId) > abs(b.baseId)) return false;
-
-              return a.baseId < b.baseId; //positive ids first
-            });
-
-  //make array of counters
-  dlong *haloGatherCounts  = (dlong*) calloc(gatherHalo->Nrows,sizeof(dlong));
-
-  for (dlong n=0;n<recvN;n++) { //loop through nodes needed for gathering halo nodes
-    dlong id = recvNodes[n].localId; //coalesced index for this baseId
-    haloGatherCounts[id]++;  //tally
-  }
-
-  // sort the list by rank to the order where they should recieved by MPI_Allgatherv
-  std::sort(recvNodes, recvNodes+recvN,
+  // sort the list by rank to the order where they will be sent by MPI_Allgatherv
+  std::sort(sharedNodes, sharedNodes+Nshared,
             [](const parallelNode_t& a, const parallelNode_t& b) {
               if(a.rank < b.rank) return true; //group by rank
               if(a.rank > b.rank) return false;
 
-              return a.localId < b.localId; //then order by localId
+              return a.newId < b.newId; //then order by the localId relative to this rank
             });
 
   //make mpi allgatherv counts and offsets
-  mpiSendCounts = (int*) calloc(size, sizeof(int));
-  mpiRecvCounts = (int*) calloc(size, sizeof(int));
-  mpiSendOffsets = (int*) calloc(size+1, sizeof(int));
-  mpiRecvOffsets = (int*) calloc(size+1, sizeof(int));
+  mpiSendCountsT = (int*) calloc(size, sizeof(int));
+  mpiSendCountsN = (int*) calloc(size, sizeof(int));
+  mpiRecvCountsT = (int*) calloc(size, sizeof(int));
+  mpiRecvCountsN = (int*) calloc(size, sizeof(int));
+  mpiSendOffsetsT = (int*) calloc(size+1, sizeof(int));
+  mpiSendOffsetsN = (int*) calloc(size+1, sizeof(int));
+  mpiRecvOffsetsN = (int*) calloc(size+1, sizeof(int));
+  mpiRecvOffsetsT = (int*) calloc(size+1, sizeof(int));
 
-  //make ops for gathering halo nodes after an MPI_Allgatherv
-  postmpi = new ogsGather_t();
-
-  postmpi->Nrows = gatherHalo->Nrows;
-  postmpi->rowStarts = (dlong*) calloc(postmpi->Nrows+1,sizeof(dlong));
-  for (dlong i=0;i<postmpi->Nrows;i++) {
-    postmpi->rowStarts[i+1] = postmpi->rowStarts[i] + haloGatherCounts[i];
-    haloGatherCounts[i] = 0;
+  for (dlong n=0;n<Nshared;n++) { //loop through nodes we need to send
+    const int r = sharedNodes[n].rank;
+    if (sharedNodes[n].sign>0) mpiSendCountsN[r]++;
+    mpiSendCountsT[r]++;
   }
-  postmpi->nnz = postmpi->rowStarts[postmpi->Nrows];
-  postmpi->colIds = (dlong*) calloc(postmpi->nnz+1,sizeof(dlong));
-
-  dlong *recvIds = (dlong*) calloc(postmpi->nnz,sizeof(dlong));
-
-  for (dlong n=0;n<recvN;n++) {
-    //count what rank this is recieved from
-    mpiRecvCounts[recvNodes[n].rank]++;
-
-    recvIds[n] = recvNodes[n].newId;
-
-    const dlong hid = recvNodes[n].localId;
-    const dlong soffset = postmpi->rowStarts[hid];
-    const int sindex  = haloGatherCounts[hid];
-    postmpi->colIds[soffset+sindex] = n; //record id
-    haloGatherCounts[hid]++;
-  }
-
 
   //shared counts
-  MPI_Alltoall(mpiRecvCounts, 1, MPI_INT,
-               mpiSendCounts, 1, MPI_INT, comm);
+  MPI_Alltoall(mpiSendCountsT, 1, MPI_INT,
+               mpiRecvCountsT, 1, MPI_INT, comm);
+  MPI_Alltoall(mpiSendCountsN, 1, MPI_INT,
+               mpiRecvCountsN, 1, MPI_INT, comm);
 
   //cumulative sum
   for (int r=0;r<size;r++) {
-    mpiSendOffsets[r+1] = mpiSendOffsets[r]+mpiSendCounts[r];
-    mpiRecvOffsets[r+1] = mpiRecvOffsets[r]+mpiRecvCounts[r];
+    mpiSendOffsetsN[r+1] = mpiSendOffsetsN[r]+mpiSendCountsN[r];
+    mpiSendOffsetsT[r+1] = mpiSendOffsetsT[r]+mpiSendCountsT[r];
+    mpiRecvOffsetsN[r+1] = mpiRecvOffsetsN[r]+mpiRecvCountsN[r];
+    mpiRecvOffsetsT[r+1] = mpiRecvOffsetsT[r]+mpiRecvCountsT[r];
   }
 
-  dlong sendN = mpiSendOffsets[size];
-  dlong *sendIds = (dlong*) malloc(sendN*sizeof(dlong));
+  //make ops for scattering halo nodes before sending
+  NsendN=mpiSendOffsetsN[size];
+  NsendT=mpiSendOffsetsT[size];
 
-  //Share the list of newIds we expect to recieve from each rank
-  MPI_Alltoallv(recvIds, mpiRecvCounts, mpiRecvOffsets, MPI_DLONG,
-                sendIds, mpiSendCounts, mpiSendOffsets, MPI_DLONG,
+  sendIdsN = (dlong*) calloc(NsendN,sizeof(dlong));
+  sendIdsT = (dlong*) calloc(NsendT,sizeof(dlong));
+
+  NsendN=0; //positive node count
+  NsendT=0; //all node count
+
+  for (dlong n=0;n<Nshared;n++) { //loop through nodes we need to send
+    dlong id = sharedNodes[n].newId; //coalesced index for this baseId on this rank
+    if (sharedNodes[n].sign==2) {
+      sendIdsN[NsendN++] = id;
+    }
+    sendIdsT[NsendT++] = id;
+  }
+  o_sendIdsN = platform.malloc(NsendT*sizeof(dlong), sendIdsN);
+  o_sendIdsT = platform.malloc(NsendN*sizeof(dlong), sendIdsT);
+
+  //send the node lists so we know what we'll receive
+  dlong Nrecv = mpiRecvOffsetsT[size];
+  parallelNode_t* recvNodes = (parallelNode_t* ) malloc(Nrecv*sizeof(parallelNode_t));
+
+  //Send list of nodes to each rank
+  MPI_Alltoallv(sharedNodes, mpiSendCountsT, mpiSendOffsetsT, MPI_PARALLELNODE_T,
+                  recvNodes, mpiRecvCountsT, mpiRecvOffsetsT, MPI_PARALLELNODE_T,
                 comm);
-
-  //free up the send space
   MPI_Barrier(comm);
-  free(recvIds);
 
-  //reset counters
-  for (dlong i=0;i<gatherHalo->Nrows;i++) haloGatherCounts[i] = 0;
+  //make ops for gathering halo nodes after an MPI_Allgatherv
+  postmpi = new ogsOperator_t(platform);
+  postmpi->kind = Signed;
 
-  for (dlong n=0;n<sendN;n++) { //loop through nodes we need to send
-    const dlong hid = indexMap[sendIds[n]] - NgatherLocal;
-    haloGatherCounts[hid]++;  //tally
+  postmpi->NrowsN = Nhalo;
+  postmpi->NrowsT = Nhalo;
+  postmpi->rowStartsN = (dlong*) calloc(Nhalo+1,sizeof(dlong));
+  postmpi->rowStartsT = (dlong*) calloc(Nhalo+1,sizeof(dlong));
+
+  //make array of counters
+  dlong *haloGatherTCounts  = (dlong*) malloc(Nhalo*sizeof(dlong));
+  dlong *haloGatherNCounts  = (dlong*) malloc(Nhalo*sizeof(dlong));
+
+  //count the data that will already be in haloBuf
+  for (dlong n=0;n<Nhalo;n++) {
+    haloGatherNCounts[n] = (n<NhaloP) ? 1 : 0;
+    haloGatherTCounts[n] = 1;
   }
 
-  //make ops for scattering halo nodes before sending via MPI_Allgatherv
-  prempi = new ogsGather_t();
-  prempi->Nrows = gatherHalo->Nrows;
-  prempi->rowStarts       = (dlong*) calloc(prempi->Nrows+1,sizeof(dlong));
-  for (dlong i=0;i<prempi->Nrows;i++) {
-    prempi->rowStarts[i+1] = prempi->rowStarts[i] + haloGatherCounts[i];
-    haloGatherCounts[i] = 0;
-  }
-  prempi->nnz = prempi->rowStarts[prempi->Nrows];
-
-  prempi->colIds = (dlong*) calloc(prempi->nnz+1,sizeof(dlong));
-
-  for (dlong n=0;n<sendN;n++) { //loop through nodes we need to send
-    const dlong hid = indexMap[sendIds[n]] - NgatherLocal;
-    const dlong soffset = prempi->rowStarts[hid];
-    const int sindex  = haloGatherCounts[hid];
-    prempi->colIds[soffset+sindex] = n; //record id
-    haloGatherCounts[hid]++;
+  for (dlong n=0;n<Nrecv;n++) { //loop through nodes needed for gathering halo nodes
+    dlong id = recvNodes[n].localId; //coalesced index for this baseId on this rank
+    if (recvNodes[n].sign==2) haloGatherNCounts[id]++;  //tally
+    haloGatherTCounts[id]++;  //tally
   }
 
-  free(haloGatherCounts);
-  free(sendIds);
+  for (dlong i=0;i<Nhalo;i++) {
+    postmpi->rowStartsN[i+1] = postmpi->rowStartsN[i] + haloGatherNCounts[i];
+    postmpi->rowStartsT[i+1] = postmpi->rowStartsT[i] + haloGatherTCounts[i];
+    haloGatherNCounts[i] = 0;
+    haloGatherTCounts[i] = 0;
+  }
+  postmpi->nnzN = postmpi->rowStartsN[Nhalo];
+  postmpi->nnzT = postmpi->rowStartsT[Nhalo];
+  postmpi->colIdsN = (dlong*) calloc(postmpi->nnzN,sizeof(dlong));
+  postmpi->colIdsT = (dlong*) calloc(postmpi->nnzT,sizeof(dlong));
 
-  prempi->o_rowStarts = platform.malloc((prempi->Nrows+1)*sizeof(dlong), prempi->rowStarts);
-  prempi->o_colIds  = platform.malloc((prempi->nnz+1)*sizeof(dlong), prempi->colIds);
+  for (dlong n=0;n<NhaloP;n++) {
+    const dlong soffset = postmpi->rowStartsN[n];
+    const int sindex  = haloGatherNCounts[n];
+    postmpi->colIdsN[soffset+sindex] = n; //record id
+    haloGatherNCounts[n]++;
+  }
+  for (dlong n=0;n<Nhalo;n++) {
+    const dlong soffset = postmpi->rowStartsT[n];
+    const int sindex  = haloGatherTCounts[n];
+    postmpi->colIdsT[soffset+sindex] = n; //record id
+    haloGatherTCounts[n]++;
+  }
 
-  postmpi->o_rowStarts  = platform.malloc((postmpi->Nrows+1)*sizeof(dlong), postmpi->rowStarts);
-  postmpi->o_colIds  = platform.malloc((postmpi->nnz+1)*sizeof(dlong), postmpi->colIds);
+  dlong cnt=Nhalo; //positive node count
+  for (dlong n=0;n<Nrecv;n++) { //loop through nodes we need to send
+    dlong id = recvNodes[n].localId; //coalesced index for this baseId on this rank
+    if (recvNodes[n].sign==2) {
+      const dlong soffset = postmpi->rowStartsN[id];
+      const int sindex  = haloGatherNCounts[id];
+      postmpi->colIdsN[soffset+sindex] = cnt++; //record id
+      haloGatherNCounts[id]++;
+    }
+    const dlong soffset = postmpi->rowStartsT[id];
+    const int sindex  = haloGatherTCounts[id];
+    postmpi->colIdsT[soffset+sindex] = n + Nhalo; //record id
+    haloGatherTCounts[id]++;
+  }
 
-  //make gatherScatter operator
-  sendS = new ogsGatherScatter_t();
-  sendS->Nrows = gatherHalo->Nrows;
-  sendS->gather  = gatherHalo;
-  sendS->scatter = prempi;
+  postmpi->o_rowStartsN = platform.malloc((postmpi->NrowsT+1)*sizeof(dlong), postmpi->rowStartsN);
+  postmpi->o_rowStartsT = platform.malloc((postmpi->NrowsT+1)*sizeof(dlong), postmpi->rowStartsT);
+  postmpi->o_colIdsN = platform.malloc((postmpi->nnzN)*sizeof(dlong), postmpi->colIdsN);
+  postmpi->o_colIdsT = platform.malloc((postmpi->nnzT)*sizeof(dlong), postmpi->colIdsT);
 
-  recvS = new ogsGatherScatter_t();
-  recvS->Nrows = gatherHalo->Nrows;
-  recvS->gather  = postmpi;
-  recvS->scatter = gatherHalo;
+  //free up space
+  free(recvNodes);
+  free(haloGatherNCounts);
+  free(haloGatherTCounts);
 
-  //divide the list of colIds into roughly equal sized blocks so that each
-  // threadblock loads approximately an equal amount of data
-  sendS->setupRowBlocks(platform);
-  recvS->setupRowBlocks(platform);
+  sendCounts = (int*) calloc(size, sizeof(int));
+  recvCounts = (int*) calloc(size, sizeof(int));
+  sendOffsets = (int*) calloc(size+1, sizeof(int));
+  recvOffsets = (int*) calloc(size+1, sizeof(int));
 
   //make scratch space
-  reallocOccaBuffer(sizeof(dfloat));
+  AllocBuffer(Sizeof(Dfloat));
 }
 
-void ogsAllToAll_t::reallocOccaBuffer(size_t Nbytes) {
-  if (o_sendBuf.size() < prempi->nnz*Nbytes) {
-    if (o_sendBuf.size()) o_sendBuf.free();
-    sendBuf = platform.hostMalloc(prempi->nnz*Nbytes,  nullptr, h_sendBuf);
-    o_sendBuf = platform.malloc(prempi->nnz*Nbytes);
+void ogsAllToAll_t::AllocBuffer(size_t Nbytes) {
+  if (o_haloBuf.size() < postmpi->nnzT*Nbytes) {
+    if (o_haloBuf.size()) o_haloBuf.free();
+    haloBuf = platform.hostMalloc(postmpi->nnzT*Nbytes,  nullptr, h_haloBuf);
+    o_haloBuf = platform.malloc(postmpi->nnzT*Nbytes);
   }
-  if (o_recvBuf.size() < postmpi->nnz*Nbytes) {
-    if (o_recvBuf.size()) o_recvBuf.free();
-    recvBuf = platform.hostMalloc(postmpi->nnz*Nbytes,  nullptr, h_recvBuf);
-    o_recvBuf = platform.malloc(postmpi->nnz*Nbytes);
+  if (o_sendBuf.size() < NsendT*Nbytes) {
+    if (o_sendBuf.size()) o_sendBuf.free();
+    sendBuf = platform.hostMalloc(NsendT*Nbytes,  nullptr, h_sendBuf);
+    o_sendBuf = platform.malloc(NsendT*Nbytes);
   }
 }
 
 ogsAllToAll_t::~ogsAllToAll_t() {
-  if(prempi) prempi->Free();
-  if(postmpi) postmpi->Free();
+  if(postmpi) {delete postmpi; postmpi=nullptr;}
 
-  if(sendS) sendS->Free();
-  if(recvS) recvS->Free();
+  if(sendIdsN) {free(sendIdsN); sendIdsN=nullptr;}
+  if(sendIdsT) {free(sendIdsT); sendIdsT=nullptr;}
+  if(o_sendIdsN.size()) o_sendIdsN.free();
+  if(o_sendIdsT.size()) o_sendIdsT.free();
 
+  if(o_haloBuf.size()) o_haloBuf.free();
+  if(h_haloBuf.size()) h_haloBuf.free();
   if(o_sendBuf.size()) o_sendBuf.free();
-  if(o_recvBuf.size()) o_recvBuf.free();
   if(h_sendBuf.size()) h_sendBuf.free();
-  if(h_recvBuf.size()) h_recvBuf.free();
 
-  if(mpiSendCounts) free(mpiSendCounts);
-  if(mpiRecvCounts) free(mpiRecvCounts);
-  if(mpiSendOffsets) free(mpiSendOffsets);
-  if(mpiRecvOffsets) free(mpiRecvOffsets);
+  if(mpiSendCountsN)  {free(mpiSendCountsN);  mpiSendCountsN=nullptr;}
+  if(mpiSendCountsT)  {free(mpiSendCountsT);  mpiSendCountsT=nullptr;}
+  if(mpiRecvCountsN)  {free(mpiRecvCountsN);  mpiRecvCountsN=nullptr;}
+  if(mpiRecvCountsT)  {free(mpiRecvCountsT);  mpiRecvCountsT=nullptr;}
+  if(mpiSendOffsetsN) {free(mpiSendOffsetsN); mpiSendOffsetsN=nullptr;}
+  if(mpiSendOffsetsT) {free(mpiSendOffsetsT); mpiSendOffsetsT=nullptr;}
+  if(mpiRecvOffsetsN) {free(mpiRecvOffsetsN); mpiRecvOffsetsN=nullptr;}
+  if(mpiRecvOffsetsT) {free(mpiRecvOffsetsT); mpiRecvOffsetsT=nullptr;}
+  if(sendCounts)  {free(sendCounts); sendCounts=nullptr;}
+  if(recvCounts)  {free(recvCounts); recvCounts=nullptr;}
+  if(sendOffsets) {free(sendOffsets); sendOffsets=nullptr;}
+  if(recvOffsets) {free(recvOffsets); recvOffsets=nullptr;}
 }
 
 } //namespace ogs

@@ -28,201 +28,214 @@ SOFTWARE.
 #define OGS_EXCHANGE_HPP
 
 #include "ogs.hpp"
-#include "ogs/ogsGather.hpp"
-#include "ogs/ogsScatter.hpp"
-#include "ogs/ogsGatherScatter.hpp"
+#include "ogs/ogsOperator.hpp"
 
 namespace ogs {
 
 //virtual base class to perform MPI exchange of gatherScatter
 class ogsExchange_t {
 public:
+  platform_t &platform;
+  MPI_Comm comm;
+  int rank, size;
+
+  dlong Nhalo, NhaloP;
+
+  void *haloBuf=nullptr;
+  occa::memory o_haloBuf, h_haloBuf;
+
+  bool gpu_aware=false;
+
+  ogsExchange_t(platform_t &_platform, MPI_Comm _comm):
+    platform(_platform),
+    comm(_comm) {
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
+  }
   virtual ~ogsExchange_t(){};
 
-  virtual void Start(occa::memory &o_v, bool ga, bool overlap)=0;
-  virtual void Finish(occa::memory &o_v, bool ga, bool overlap)=0;
+  virtual void Start(const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans,
+                     const bool host=false)=0;
+  virtual void Finish(const int k,
+                      const Type type,
+                      const Op op,
+                      const Transpose trans,
+                      const bool host=false)=0;
 
-  virtual void reallocOccaBuffer(size_t Nbytes)=0;
+  virtual void AllocBuffer(size_t Nbytes)=0;
 };
 
 //MPI communcation via single MPI_Alltoallv call
 class ogsAllToAll_t: public ogsExchange_t {
 private:
-  platform_t &platform;
-  MPI_Comm comm;
-  int rank, size;
 
-  ogsGather_t *prempi=nullptr, *postmpi=nullptr;
+  dlong NsendN=0, NsendT=0;
+  dlong *sendIdsN=nullptr, *sendIdsT=nullptr;
+  occa::memory o_sendIdsN, o_sendIdsT;
 
-  ogsGatherScatter_t* sendS=nullptr;
-  ogsGatherScatter_t* recvS=nullptr;
+  ogsOperator_t *postmpi=nullptr;
 
-  void *sendBuf=nullptr, *recvBuf=nullptr;
-  occa::memory o_sendBuf, o_recvBuf;
-  occa::memory h_sendBuf, h_recvBuf;
+  void *sendBuf=nullptr;
+  occa::memory o_sendBuf;
+  occa::memory h_sendBuf;
 
-  int *mpiSendCounts =nullptr;
-  int *mpiRecvCounts =nullptr;
-  int *mpiSendOffsets=nullptr;
-  int *mpiRecvOffsets=nullptr;
+  int *mpiSendCountsN =nullptr;
+  int *mpiSendCountsT =nullptr;
+  int *mpiRecvCountsN =nullptr;
+  int *mpiRecvCountsT =nullptr;
+  int *mpiSendOffsetsN=nullptr;
+  int *mpiSendOffsetsT=nullptr;
+  int *mpiRecvOffsetsN=nullptr;
+  int *mpiRecvOffsetsT=nullptr;
+
+  int *sendCounts =nullptr;
+  int *recvCounts =nullptr;
+  int *sendOffsets=nullptr;
+  int *recvOffsets=nullptr;
 
 public:
-  ogsAllToAll_t(dlong recvN,
-               parallelNode_t* recvNodes,
-               dlong NgatherLocal,
-               ogsGather_t *gatherHalo,
-               dlong *indexMap,
+  ogsAllToAll_t(dlong Nshared,
+               parallelNode_t* sharedNodes,
+               ogsOperator_t *gatherHalo,
                MPI_Comm _comm,
                platform_t &_platform);
 
   virtual ~ogsAllToAll_t();
 
-  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
-  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Start(const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans,
+                     const bool host=false);
+  virtual void Finish(const int k,
+                      const Type type,
+                      const Op op,
+                      const Transpose trans,
+                      const bool host=false);
 
-  virtual void reallocOccaBuffer(size_t Nbytes);
+  virtual void AllocBuffer(size_t Nbytes);
 
 };
 
 //MPI communcation via pairwise send/recvs
 class ogsPairwise_t: public ogsExchange_t {
 private:
-  platform_t &platform;
-  MPI_Comm comm;
-  int rank, size;
 
-  ogsGather_t *prempi=nullptr, *postmpi=nullptr;
+  dlong NsendN=0, NsendT=0;
+  dlong *sendIdsN=nullptr, *sendIdsT=nullptr;
+  occa::memory o_sendIdsN, o_sendIdsT;
 
-  ogsGatherScatter_t* sendS=nullptr;
-  ogsGatherScatter_t* recvS=nullptr;
+  ogsOperator_t *postmpi=nullptr;
 
-  void *sendBuf=nullptr, *recvBuf=nullptr;
-  occa::memory o_sendBuf, o_recvBuf;
-  occa::memory h_sendBuf, h_recvBuf;
+  void *sendBuf=nullptr;
+  occa::memory o_sendBuf;
+  occa::memory h_sendBuf;
 
-  int NranksSend=0, NranksRecv=0;
-  int *sendRanks =nullptr;
-  int *recvRanks =nullptr;
-  int *sendCounts =nullptr;
-  int *recvCounts =nullptr;
-  int *sendOffsets=nullptr;
-  int *recvOffsets=nullptr;
+  int NranksSendN=0, NranksRecvN=0;
+  int NranksSendT=0, NranksRecvT=0;
+  int *sendRanksN =nullptr;
+  int *sendRanksT =nullptr;
+  int *recvRanksN =nullptr;
+  int *recvRanksT =nullptr;
+  int *sendCountsN =nullptr;
+  int *sendCountsT =nullptr;
+  int *recvCountsN =nullptr;
+  int *recvCountsT =nullptr;
+  int *sendOffsetsN=nullptr;
+  int *sendOffsetsT=nullptr;
+  int *recvOffsetsN=nullptr;
+  int *recvOffsetsT=nullptr;
   MPI_Request* requests;
   MPI_Status* statuses;
 
 public:
-  ogsPairwise_t(dlong recvN,
-               parallelNode_t* recvNodes,
-               dlong NgatherLocal,
-               ogsGather_t *gatherHalo,
-               dlong *indexMap,
+  ogsPairwise_t(dlong Nshared,
+               parallelNode_t* sharedNodes,
+               ogsOperator_t *gatherHalo,
                MPI_Comm _comm,
                platform_t &_platform);
 
   virtual ~ogsPairwise_t();
 
-  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
-  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Start(const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans,
+                     const bool host=false);
+  virtual void Finish(const int k,
+                      const Type type,
+                      const Op op,
+                      const Transpose trans,
+                      const bool host=false);
 
-  virtual void reallocOccaBuffer(size_t Nbytes);
+  virtual void AllocBuffer(size_t Nbytes);
 };
 
 //MPI communcation via Crystal Router
 class ogsCrystalRouter_t: public ogsExchange_t {
 private:
-  platform_t &platform;
-  MPI_Comm comm;
-  int rank, size;
-
-  ogsGather_t  *gatherHalo=nullptr;
-  ogsScatter_t *scatterHalo=nullptr;
-
-  MPI_Request request[3];
-  MPI_Status status[3];
 
   struct crLevel {
     int Nmsg;
     int partner;
 
     int Nsend, Nrecv0, Nrecv1;
+    dlong recvOffset;
 
-    dlong *sendIds;
-    dlong *recvIds0, *recvIds1;
-
+    dlong *sendIds=nullptr;
     occa::memory o_sendIds;
-    occa::memory o_recvIds0, o_recvIds1;
+
+    ogsOperator_t *gather=nullptr;
+
+    ~crLevel() {
+      if(sendIds) {free(sendIds); sendIds=nullptr;}
+      if(gather) {delete gather; gather=nullptr;}
+    }
   };
 
-  int Nlevels=0;
-  crLevel* levels=nullptr;
+  int buf_id=0;
+  occa::memory o_buf[2];
+  occa::memory h_buf[2];
+  char* buf[2];
 
-  int Nhalo=0, NhaloExt=0;
-  void *haloBuf=nullptr;
-  occa::memory o_haloBuf, h_haloBuf;
+  MPI_Request request[3];
+  MPI_Status status[3];
+
+  int Nlevels=0;
+  crLevel* levelsN=nullptr;
+  crLevel* levelsT=nullptr;
 
   int NsendMax=0, NrecvMax=0;
-  void *sendBuf=nullptr, *recvBuf=nullptr;
-  occa::memory o_sendBuf, o_recvBuf;
-  occa::memory h_sendBuf, h_recvBuf;
+  void *sendBuf=nullptr;
+  void *recvBuf=nullptr;
+  occa::memory o_sendBuf;
+  occa::memory h_sendBuf;
+  occa::memory o_recvBuf;
 
 public:
-  ogsCrystalRouter_t(dlong recvN,
-               parallelNode_t* recvNodes,
-               dlong NgatherLocal,
-               ogsGather_t *_gatherHalo,
-               dlong *indexMap,
-               MPI_Comm _comm,
-               platform_t &_platform);
+  ogsCrystalRouter_t(dlong Nshared,
+                   parallelNode_t* sharedNodes,
+                   ogsOperator_t *gatherHalo,
+                   MPI_Comm _comm,
+                   platform_t &_platform);
 
   virtual ~ogsCrystalRouter_t();
 
-  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
-  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
+  virtual void Start(const int k,
+                     const Type type,
+                     const Op op,
+                     const Transpose trans,
+                     const bool host=false);
+  virtual void Finish(const int k,
+                      const Type type,
+                      const Op op,
+                      const Transpose trans,
+                      const bool host=false);
 
-  virtual void reallocOccaBuffer(size_t Nbytes);
-};
-
-//MPI communcation via binary tree
-class ogsBinaryTree_t: public ogsExchange_t {
-private:
-  platform_t &platform;
-  MPI_Comm comm;
-  int rank, size;
-
-  ogsGather_t  *gatherHalo=nullptr;
-  ogsScatter_t *scatterHalo=nullptr;
-
-  ogsGather_t  *partialGather=nullptr;
-  ogsScatter_t *partialScatter=nullptr;
-  ogsGatherScatter_t* rootGS=nullptr;
-
-  void *sBuf=nullptr, *gBuf=nullptr;
-  occa::memory o_sBuf, o_gBuf;
-  occa::memory h_sBuf, h_gBuf;
-
-  int Npartners=0;
-  int upstreamPartner;
-  int *downstreamPartners =nullptr;
-
-  int sTotal=0, gTotal=0, Nsend=0;
-  int *sCounts =nullptr;
-  int *sOffsets=nullptr;
-  MPI_Request* requests;
-  MPI_Status* statuses;
-
-public:
-  ogsBinaryTree_t(dlong recvN,
-               parallelNode_t* recvNodes,
-               dlong NgatherLocal,
-               ogsGather_t *_gatherHalo,
-               dlong *indexMap,
-               MPI_Comm _comm,
-               platform_t &_platform);
-
-  virtual void Start(occa::memory &o_v, bool ga, bool overlap);
-  virtual void Finish(occa::memory &o_v, bool ga, bool overlap);
-
-  virtual void reallocOccaBuffer(size_t Nbytes);
+  virtual void AllocBuffer(size_t Nbytes);
 };
 
 } //namespace ogs

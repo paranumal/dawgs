@@ -24,47 +24,63 @@ SOFTWARE.
 
 */
 
-#ifndef OGS_SCATTER_HPP
-#define OGS_SCATTER_HPP
+#ifndef OGS_UTILS_HPP
+#define OGS_UTILS_HPP
 
 #include "ogs.hpp"
 
 namespace ogs {
 
-//a Scatter class is transposed Gather. Since all
-// Gathers will have at most 1 non-zero per column,
-// Scatters have at most 1 non-zero per row. We can
-// therefore represent a scatter with just an index
-// mapping
-class ogsScatter_t {
-public:
-  dlong Nrows=0;
-  dlong Ncols=0;
+extern const int blockSize;
+extern const int gatherNodesPerBlock;
 
-  dlong *rowStarts=nullptr;
-  dlong *colIds=nullptr;
+extern int Nrefs;
 
-  occa::memory o_rowStarts;
-  occa::memory o_colIds;
+extern occa::stream dataStream;
 
-  dlong NrowBlocks=0;
-  dlong *blockRowStarts=nullptr;
-  occa::memory o_blockRowStarts;
+extern MPI_Datatype MPI_PARALLELNODE_T;
 
-  //optional flat indexing
-  bool flat=false;
+//4 types - Float, Double, Int32, Int64
+//4 ops - Add, Mul, Max, Min
+extern occa::kernel gatherScatterKernel[4][4];
+extern occa::kernel gatherKernel[4][4];
+extern occa::kernel scatterKernel[4];
+extern occa::kernel extractKernel[4];
 
-  void Free();
-  ~ogsScatter_t() {Free();}
+struct parallelNode_t{
 
-  //build a scatter operator from a transposed gather
-  ogsScatter_t(ogsGather_t * gather, platform_t &platform,
-               bool flatten=false);
+  dlong localId;    // local node id
+  hlong baseId;     // original global index
 
-  void Apply(occa::memory& o_gv, occa::memory& o_v);
+  dlong newId;         // new global id
+  int sign;
 
-  void Apply(dfloat *v, const dfloat *gv);
+  int rank; //original rank
+  int destRank; //destination rank
+
 };
+
+void Init(platform_t& platform);
+void FreeKernels();
+
+size_t Sizeof(const Type type);
+MPI_Datatype MPI_Type(const Type type);
+
+//permute an array A, according to the ordering returned by P
+// i.e. for all n, A[P(n)] <- A[n]
+template<typename T, class Order>
+void permute(const dlong N, T* A, Order P) {
+
+  for(dlong n=0;n<N;++n) {
+    //get what index A[n] should move to
+    dlong pn = P(A[n]);
+    while (pn!=n) {
+      //swap
+      std::swap(A[n], A[pn]);
+      pn = P(A[n]);
+    }
+  }
+}
 
 } //namespace ogs
 

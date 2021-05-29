@@ -53,10 +53,11 @@ hold off
 
 
 Legend = {"$p=1$","$p=2$","$p=3$","$p=4$","$p=5$","$p=6$","$p=7$","$p=8$"};
-Title = "Nvidia V100";
+%Title = "Nvidia V100";
+Title = "AMD MI100";
 XTitle = "Degrees of freedom per rank";
 YTitle = "Throughput (DoFs per rank second)";
-writeLatexFigure('V100_PW_N.tex', X, Y, Title, XTitle, YTitle, Legend);
+writeLatexFigure('MI100_PW_N.tex', X, Y, Title, XTitle, YTitle, Legend);
 
 figure(3)
 clf
