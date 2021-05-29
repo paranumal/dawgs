@@ -44,7 +44,11 @@ public:
   void *haloBuf=nullptr;
   occa::memory o_haloBuf, h_haloBuf;
 
+#ifdef GPU_AWARE_MPI
+  bool gpu_aware=true;
+#else
   bool gpu_aware=false;
+#endif
 
   ogsExchange_t(platform_t &_platform, MPI_Comm _comm):
     platform(_platform),

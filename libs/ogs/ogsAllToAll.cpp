@@ -305,6 +305,8 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
   free(haloGatherNCounts);
   free(haloGatherTCounts);
 
+  postmpi->setupRowBlocks();
+
   sendCounts = (int*) calloc(size, sizeof(int));
   recvCounts = (int*) calloc(size, sizeof(int));
   sendOffsets = (int*) calloc(size+1, sizeof(int));

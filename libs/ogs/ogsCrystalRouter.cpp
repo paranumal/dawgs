@@ -644,6 +644,9 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
     gatherN->o_colIdsT = platform.malloc((gatherN->nnzT)*sizeof(dlong), gatherN->colIdsT);
     gatherN->o_colIdsN = gatherN->o_colIdsT;
 
+    gatherN->setupRowBlocks();
+    gatherT->setupRowBlocks();
+
     levelsT[Nlevels].gather = gatherT;
     levelsN[Nlevels].gather = gatherN;
 

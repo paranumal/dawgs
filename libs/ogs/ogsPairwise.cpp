@@ -88,13 +88,6 @@ void ogsPairwise_t::Finish(const int k,
     device.setStream(dataStream);
   }
 
-  //if the halo data is on the host, extract the send buffer
-  if (host || !gpu_aware) {
-    if (trans == NoTrans)
-      extract(NsendN, k, type, sendIdsN, haloBuf, sendBuf);
-    else
-      extract(NsendT, k, type, sendIdsT, haloBuf, sendBuf);
-  }
 
   char *sendPtr, *recvPtr;
   if (gpu_aware && !host) { //device pointer
@@ -119,6 +112,14 @@ void ogsPairwise_t::Finish(const int k,
     MPI_Irecv(recvPtr+recvOffsets[r]*Nbytes,
               k*recvCounts[r], MPI_Type(type), recvRanks[r],
               recvRanks[r], comm, requests+r);
+  }
+
+  //if the halo data is on the host, extract the send buffer
+  if (host || !gpu_aware) {
+    if (trans == NoTrans)
+      extract(NsendN, k, type, sendIdsN, haloBuf, sendBuf);
+    else
+      extract(NsendT, k, type, sendIdsT, haloBuf, sendBuf);
   }
 
   //post sends
@@ -308,6 +309,7 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
   free(haloGatherNCounts);
   free(haloGatherTCounts);
 
+  postmpi->setupRowBlocks();
 
   //compress the send/recv counts to pairwise exchanges
   NranksSendN=0;
