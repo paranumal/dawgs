@@ -2,7 +2,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+Copyright (c) 2017-2021 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -80,7 +80,6 @@ void ogsPairwise_t::Finish(const int k,
   occa::stream currentStream = device.getStream();
 
   const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
-  const dlong N     = (trans == NoTrans) ? NhaloP : Nhalo;
 
   if (Nsend && !gpu_aware && !host) {
     //synchronize data stream to ensure the host buffer is on the host
@@ -143,6 +142,7 @@ void ogsPairwise_t::Finish(const int k,
       if (!host) {
         // copy recv back to device
         device.setStream(dataStream);
+        const dlong N = (trans == Trans) ? NhaloP : Nhalo;
         o_haloBuf.copyFrom(haloBuf, N*Nbytes, 0, "async: true");
         device.finish(); //wait for transfer to finish
         device.setStream(currentStream);
@@ -181,8 +181,8 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
   int *mpiRecvCountsN = (int*) calloc(size, sizeof(int));
   int *mpiSendOffsetsT = (int*) calloc(size+1, sizeof(int));
   int *mpiSendOffsetsN = (int*) calloc(size+1, sizeof(int));
-  int *mpiRecvOffsetsN = (int*) calloc(size+1, sizeof(int));
   int *mpiRecvOffsetsT = (int*) calloc(size+1, sizeof(int));
+  int *mpiRecvOffsetsN = (int*) calloc(size+1, sizeof(int));
 
   for (dlong n=0;n<Nshared;n++) { //loop through nodes we need to send
     const int r = sharedNodes[n].rank;
@@ -221,8 +221,8 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
     }
     sendIdsT[NsendT++] = id;
   }
-  o_sendIdsN = platform.malloc(NsendT*sizeof(dlong), sendIdsN);
-  o_sendIdsT = platform.malloc(NsendN*sizeof(dlong), sendIdsT);
+  o_sendIdsT = platform.malloc(NsendT*sizeof(dlong), sendIdsT);
+  o_sendIdsN = platform.malloc(NsendN*sizeof(dlong), sendIdsN);
 
   //send the node lists so we know what we'll receive
   dlong Nrecv = mpiRecvOffsetsT[size];
@@ -383,7 +383,7 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
   free(mpiRecvOffsetsT);
 
   //make scratch space
-  AllocBuffer(sizeof(dfloat));
+  AllocBuffer(Sizeof(Dfloat));
 }
 
 void ogsPairwise_t::AllocBuffer(size_t Nbytes) {

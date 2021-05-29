@@ -2,7 +2,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+Copyright (c) 2017-2021 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,10 +32,12 @@ SOFTWARE.
     MPI_Comm comm;
   	dlong N;
     hlong id[N];    // the hlong and dlong types are defined in "types.h"
-    int verbose;
+    bool verbose;
+    bool unique;
     ogs_t ogs(platform);
     ...
-    ogs.Setup(N, id, comm, verbose, device);
+    ogs.Setup(N, id, comm, ogs::Signed,
+              ogs::Auto, unique, verbose);
 
   defines a partition of the set of (processor, local index) pairs,
     (p,i) \in S_j  iff   abs(id[i]) == j  on processor p
@@ -46,17 +48,18 @@ SOFTWARE.
     gather/scatter operation)
   If id[i] on proc p is negative then the pair (p,i) is "flagged". This
   determines the non-symmetric behavior. For the simpler, symmetric case,
-  all id's should be positive.
+  ogs::Unsigned can be passed to the 'Kind' parameter, which
+  treats all id's as positive.
 
   When "ogs" is no longer needed, free it with
 
-    ogsFree(ogs);
+    ogs.Free();
 
   A basic gatherScatter operation is, e.g.,
 
     occa::memory o_v;
     ...
-    ogs->GatherScatter(o_v, ogs_double, ogs_add, ogs_sym);
+    ogs.GatherScatter(o_v, 1, ogs::Double, ogs::Add, ogs::Sym);
 
   This gs call has the effect,
 
@@ -70,92 +73,68 @@ SOFTWARE.
 
   Summation on doubles is not the only operation and datatype supported. Support
   includes the operations
-    ogs_add, ogs_mul, ogs_max, ogs_min
+    ogs::Add, ogs::Mul, ogs::Max, ogs::Min
   and datatypes
-    ogs_dfloat, ogs_double, ogs_float, ogs_int, ogs_longlong, ogs_dlong, ogs_hlong.
+    ogs::Dfloat, ogs::Double, ogs::Float, ogs::Int32, ogs::Int64, ogs::Dlong, ogs::Hlong.
+  (The int32 and int64 types are the normal C++ types, whereas dfloat, dlong, and hlong
+   are defined in "types.h").
 
-  For the nonsymmetric behavior, the "transpose" parameter is important:
+  For the nonsymmetric behavior, the "Transpose" parameter is important:
 
-    ogs->GatherScatter(o_v, ogs_double, ogs_add, [ogs_notrans/ogs_trans/ogs_sym]);
+    ogs.GatherScatter(o_v, 1, ogs::Double, ogs::Add, ogs::[NoTrans/Trans/Sym]);
 
-  When transpose == ogs_notrans, any "flagged" (p,i) pairs (id[i] negative on p)
+  When transpose == ogs::NoTrans, any "flagged" (p,i) pairs (id[i] negative on p)
   do not participate in the sum, but *do* still receive the sum on output.
   As a special case, when only one (p,i) pair is unflagged per group this
   corresponds to the rectangular "Q" matrix referred to above.
 
-  When transpose == ogs_trans, the "flagged" (p,i) pairs *do* participate in the sum,
+  When transpose == ogs::Trans, the "flagged" (p,i) pairs *do* participate in the sum,
   but do *not* get set on output. In the special case of only one unflagged
   (p,i) pair, this corresponds to the transpose of "Q" referred to above.
 
-  When transpose == ogs_sym, all ids are considered "unflagged". That is,
+  When transpose == ogs::Sym, all ids are considered "unflagged". That is,
   the "flagged" (p,i) pairs *do* participate in the sum, and *do* get set
   on output.
 
-  An additional nonsymmetric operation is
+  When the 'unique' parameter is passed as 'true', the setup call modifies ids,
+  "flagging" (by negating id[i]) all (p,i) pairs in each group except one.
+  The sole "unflagged" member of the group is chosen in an arbitrary but
+  consistent way. When all groups of (p,i) pairs have a single "unflagged"
+  pair in this mannor, an additional nonsymmetric operation is available:
 
-    ogs->Gather(o_Gv, o_v, ogs_double, ogs_add, ogs_notrans);
+    ogs.Gather(o_Gv, o_v, 1, ogs::Double, ogs::Add, ogs::Trans);
 
   this has the effect of "assembling" the vector o_Gv. That is
 
     o_Gv[gid[j]] <--  \sum_{ (p,j) \in S_{id[i]} } o_v_(p) [j]
 
   for some ordering gid. As with the GatherScatter operation, when
-  transpose == ogs_notrans, any "flagged" (p,i) pairs (id[i] negative on p)
-  do not participate in the sum, whereas when transpose == ogs_trans the "flagged"
-  (p,i) pairs *do* participate in the sum. Using transpose == ogs_sym is not
-  supported (the symmetrized version of this operation is just GatherScatter).
+  Transpose == ogs::NoTrans, any "flagged" (p,i) pairs (id[i] negative on p)
+  do not participate in the sum, otherwise the "flagged" (p,i) pairs *do*
+  participate in the sum.
 
-  The reverse of this operation is
+  The inverse of this operation is
 
-    ogs->Scatter(o_v, o_Gv, ogs_double, ogs_add, ogs_notrans);
+    ogs.Scatter(o_v, o_Gv, 1, ogs::Double, ogs::Add, ogs::Trans);
 
   which has the effect of scattering in the assembled entries in o_Gv back to the
-  orginal ordering. When transpose == ogs_notrans, "flagged" (p,i) pairs (id[i]
-  negative on p) recieve their corresponding entry from o_Gv, and when
-  transpose == ogs_trans the "flagged" (p,i) pairs do *not* recieve an entry.
-  Using transpose == ogs_sym is not supported.
+  orginal ordering. When Transpose == ogs::Trans, "flagged" (p,i) pairs (id[i]
+  negative on p) do *not* recieve their corresponding entry from o_Gv, otherwise
+  the "flagged" (p,i) pairs recieve an entry.
 
-  A versions for vectors (contiguously packed) is, e.g.,
+  For operating on contiguously packed vectors, the K parameter is used, e.g.,
 
-    occa::memory o_v;
-    ogs->GatherScatterVec(o_v, k, ogs_double, ogs_add, ogs_sym);
+    ogs.GatherScatter(o_v, 3, ogs::Double, ogs::Add, ogs::Sym);
 
-  which is like "GatherScatter" operating on the datatype double[k],
+  which is like "GatherScatter" operating on the datatype double[3],
   with summation here being vector summation. Number of messages sent
   is independent of k.
 
-  For combining the communication for "GatherScatter" on multiple arrays:
-
-    occa::memory o_v1, o_v2, ..., o_vk;
-
-    ogs->GatherScatterMany(o_v, k, stride, ogs_double, op, trans);
-
-  when the arrays o_v1, o_v2, ..., o_vk are packed in o_v as
-
-    o_v1 = o_v + 0*stride, o_v2 = o_v + 1*stride, ...
-
-  This call is equivalent to
-
-    ogs->GatherScatter(o_v1, ogs_double, op, trans);
-    ogs->GatherScatter(o_v2, ogs_double, op, trans);
-    ...
-    ogs->GatherScatter(o_vk, ogs_double, op, trans);
-
-  except that all communication is done together.
-
-  A utility function, ogs_t::Unique is provided
-
-    ogs_t::Unique(ids, N, comm);
-
-  This call modifies ids, "flagging" (by negating id[i]) all (p,i) pairs in
-  each group except one. The sole "unflagged" member of the group is chosen
-  in an arbitrary but consistent way.
-
   Asynchronous versions of the various GatherScatter functions are provided by
 
-    ogs->GatherScatterStart(o_v, ogs_double, ogs_add, ogs_sym);
+    ogs.GatherScatterStart(o_v, k, ogs::Double, ogs::Add, ogs::Sym);
     ...
-    ogs->GatherScatterFinish(o_v, ogs_double, ogs_add, ogs_sym);
+    ogs.GatherScatterFinish(o_v, k, ogs::Double, ogs::Add, ogs::Sym);
 
   MPI communication is not initiated in GatherScatterStart, rather some initial
   message packing and host<->device transfers are queued. The user can then queue
@@ -163,8 +142,29 @@ SOFTWARE.
   calling GatherScatterFinish. The MPI communication will then take place while the
   user's local kernels execute to maximize the amount of communication hiding.
 
-  Finally, a thin wrapper of the ogs_t object, named halo_t is provided. This object
-  is intended to provided support for thin halo exchages between MPI procceses.
+  Finally, a specialized communcation object, named halo_t is provided. This
+  object is analogous to an ogs_t object, where each group S_j has a sole
+  "unflagged" (p,i) pair, as discussed above regarding the 'unique' parameter,
+  and furthermore each "unflagged" (p,i) pair has a unique label ids[i] on its
+  process. That is, for each "unflagged" (p,i), there are no other, flagged or
+  unflagged, pairs (p,j) on process p with the label ids[i].
+
+  With this particular flagging of (p,i) pairs, simple exchange routines are
+  defined:
+
+    halo_t halo(platofrm);
+    halo.Setup(N, ids, comm, ogs::Auto, verbose);
+    halo.Exchange(o_v, k, ogs::Double);
+
+  which has the effect of filling all "flagged" pairs (p,i) on all processes with
+  the corresponding value from the unique "unflagged" pair in S_j.
+
+  An additional untility operation available in the halo_t object is
+
+    halo.Combine(o_v, k, ogs::Double);
+
+  which has the effect of summing the entries in S_j and writing the result to
+  the sole "unflagged" pair in S_j.
 
 */
 
@@ -180,6 +180,8 @@ namespace ogs {
 typedef enum { Float, Double, Int32, Int64} Type;
 
 constexpr Type Dfloat = (std::is_same<double, dfloat>::value)
+                          ? Double : Float;
+constexpr Type Pfloat = (std::is_same<double, pfloat>::value)
                           ? Double : Float;
 constexpr Type Dlong  = (std::is_same<int32_t, dlong>::value)
                           ? Int32 : Int64;
@@ -220,7 +222,6 @@ public:
              const Method method,
              const bool _unique,
              const bool verbose);
-  void Free();
 
   void SetupGlobalToLocalMapping(dlong *GlobalToLocal);
 
@@ -323,8 +324,6 @@ public:
              const bool verbose);
 
   void SetupFromGather(ogs_t& ogs);
-
-  void Free();
 
   // Host version
   void Exchange(void  *v, const int k, const Type type);

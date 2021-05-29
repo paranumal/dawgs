@@ -2,7 +2,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+Copyright (c) 2017-2021 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -49,8 +49,9 @@ void halo_t::ExchangeStart(occa::memory& o_v,
   //collect halo buffer
   if (gathered_halo) {
     //if this halo was build from a gathered ogs the halo nodes are at the end
-    exchange->o_haloBuf.copyFrom(o_v + k*NlocalT*Sizeof(type),
-                                 k*NhaloP*Sizeof(type), 0, 0, "async: true");
+    if (NhaloP)
+      exchange->o_haloBuf.copyFrom(o_v + k*NlocalT*Sizeof(type),
+                                   k*NhaloP*Sizeof(type), 0, 0, "async: true");
   } else {
     gatherHalo->Gather(exchange->o_haloBuf, o_v,
                         k, type, Add, NoTrans);
@@ -70,9 +71,10 @@ void halo_t::ExchangeFinish(occa::memory& o_v,
   //write exchanged halo buffer back to vector
   if (gathered_halo) {
     //if this halo was build from a gathered ogs the halo nodes are at the end
-    exchange->o_haloBuf.copyTo(o_v + k*(NlocalT+NhaloP)*Sizeof(type),
-                               k*Nhalo*Sizeof(type),
-                               0, k*NhaloP*Sizeof(type), "async: true");
+    if (NhaloP)
+      exchange->o_haloBuf.copyTo(o_v + k*(NlocalT+NhaloP)*Sizeof(type),
+                                 k*Nhalo*Sizeof(type),
+                                 0, k*NhaloP*Sizeof(type), "async: true");
   } else {
     gatherHalo->Scatter(o_v, exchange->o_haloBuf,
                         k, type, Add, NoTrans);
@@ -131,8 +133,9 @@ void halo_t::CombineStart(occa::memory& o_v,
   //collect halo buffer
   if (gathered_halo) {
     //if this halo was build from a gathered ogs the halo nodes are at the end
-    exchange->o_haloBuf.copyFrom(o_v + k*NlocalT*Sizeof(type),
-                                 k*NhaloT*Sizeof(type), 0, 0, "async: true");
+    if (NhaloT)
+      exchange->o_haloBuf.copyFrom(o_v + k*NlocalT*Sizeof(type),
+                                   k*NhaloT*Sizeof(type), 0, 0, "async: true");
   } else {
     gatherHalo->Gather(exchange->o_haloBuf, o_v,
                        k, type, Add, Trans);
@@ -153,9 +156,10 @@ void halo_t::CombineFinish(occa::memory& o_v,
   //write exchanged halo buffer back to vector
   if (gathered_halo) {
     //if this halo was build from a gathered ogs the halo nodes are at the end
-    exchange->o_haloBuf.copyTo(o_v + k*NlocalT*Sizeof(type),
-                               k*NhaloP*Sizeof(type),
-                               0, 0, "async: true");
+    if (NhaloP)
+      exchange->o_haloBuf.copyTo(o_v + k*NlocalT*Sizeof(type),
+                                 k*NhaloP*Sizeof(type),
+                                 0, 0, "async: true");
   } else {
     gatherHalo->Scatter(o_v, exchange->o_haloBuf,
                         k, type, Add, Trans);

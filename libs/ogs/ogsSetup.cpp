@@ -2,7 +2,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+Copyright (c) 2017-2021 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -92,7 +92,7 @@ void ogsBase_t::Setup(const dlong _N,
   Nids=0;
   for (dlong n=0;n<N;n++) {
     if (ids[n]!=0) {
-      nodes[Nids].localId = n; //record original id
+      nodes[Nids].localId = Nids; //record a compressed id first (useful for ordering)
       nodes[Nids].baseId = (kind==Unsigned) ?
                             abs(ids[n]) : ids[n]; //record global id
       nodes[Nids].rank = rank;
@@ -104,19 +104,25 @@ void ogsBase_t::Setup(const dlong _N,
   //flag which nodes are shared via MPI
   FindSharedNodes(Nids, nodes, verbose);
 
-  //if we altered the signs of ids, write them back
-  if (unique) {
-    for (dlong n=0;n<Nids;n++) {
-      ids[nodes[n].localId] = nodes[n].baseId;
-    }
-  }
-
   //Index the local and halo baseIds on this rank and
   // construct sharedNodes which contains all the info
   // we need to setup the MPI exchange.
   dlong Nshared=0;
   parallelNode_t *sharedNodes=nullptr;
   ConstructSharedNodes(Nids, nodes, Nshared, sharedNodes);
+
+  Nids=0;
+  for (dlong n=0;n<N;n++) {
+    if (ids[n]!=0) {
+      nodes[Nids].localId = n; //record the real id now
+
+      //if we altered the signs of ids, write them back
+      if (unique)
+        ids[n] = nodes[Nids].baseId;
+
+      Nids++;
+    }
+  }
 
   //setup local gather operators
   if (kind==Signed)
@@ -849,7 +855,6 @@ MPI_Comm_size(comm, &size);
       gatherLocal->colIdsT[soffset+sindex] = nodes[i].localId;
       localGatherTCounts[gid]++;
     } else {
-      // printf("rank %d, node %d baseId %d is shared\n", rank, i, nodes[i].baseId);
       if (nodes[i].baseId>0) {
         const dlong soffset = gatherHalo->rowStartsN[gid];
         const int sindex  = haloGatherNCounts[gid];
