@@ -28,13 +28,24 @@ SOFTWARE.
 #define CORE_HPP
 
 #include <mpi.h>
-#include <occa.h>
+#include <occa.hpp>
 #include <string>
 #include <cstring>
-#include <math.h>
-#include <stdlib.h>
 #include <algorithm>
-#include "types.h"
+#include <cmath>
 #include "utils.hpp"
+#include "memory.hpp"
+
+namespace libp {
+
+// find a factorization n = nx*ny*nz such that
+//  nx>=ny>=nz are all 'close' to one another
+void Factor3(const int n, int &nx, int &ny, int &nz);
+
+void RankDecomp3(int  size_x, int  size_y, int  size_z,
+                 int &rank_x, int &rank_y, int &rank_z,
+                 const int rank);
+
+} //namespace libp
 
 #endif

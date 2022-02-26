@@ -25,52 +25,8 @@ SOFTWARE.
 
 #include "dawgs.hpp"
 
-const int Nvectors=0;
-occa::memory o_a, o_b;
-
-// find a factorization size = size_x*size_y*size_z such that
-//  size_x>=size_y>=size_z are all 'close' to one another
-void factor3(const int size, int &size_x, int &size_y, int &size_z) {
-  //start with guessing size_x ~= size^1/3
-  size_x = round(std::cbrt(size));
-  size_y = size_z = 1;
-
-  for (;size_x<size;size_x++) {
-    if (size % size_x ==0) { //if size_x divides size
-      int f = size / size_x; //divide out size_x
-
-      size_y = round(sqrt(f)); //guess size_y ~= sqrt(f)
-      for (;size_y<f;size_y++) {
-        if (f % size_y == 0) { //if size_y divides f
-          size_z = f/size_y; //divide out size_y
-
-          //swap if needed
-          if (size_y>size_x) {std::swap(size_x,size_y);}
-          if (size_z>size_y) {std::swap(size_y,size_z);}
-          if (size_y>size_x) {std::swap(size_x,size_y);}
-
-          return;
-        }
-      }
-
-      //if we're here, f is prime
-      size_y = f;
-      size_z = 1;
-
-      //swap if needed
-      if (size_y>size_x) {int tmp=size_x; size_x=size_y; size_y=tmp;}
-
-      return;
-    }
-  }
-
-  //if we made it this far, size is prime
-  size_x = size;
-  size_y = size_z = 1;
-}
-
 void CorrectnessTest(const int N, dfloat *qtest, dfloat *qcheck,
-                     const hlong *ids, const string testName, MPI_Comm comm) {
+                     const hlong *ids, const std::string testName, MPI_Comm comm) {
 
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -167,24 +123,19 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 
   //number of MPI ranks
   int size = platform.size;
+  //global MPI rank
+  int rank = platform.rank;
 
   // find a factorization size = size_x*size_y*size_z such that
   //  size_x>=size_y>=size_z are all 'close' to one another
   int size_x, size_y, size_z;
-  factor3(size, size_x, size_y, size_z);
+  Factor3(size, size_x, size_y, size_z);
 
-  //global MPI rank
-  int rank = platform.rank;
-
-  //find our coordinates in the MPI grid such that
-  // rank = rank_x + rank_y*size_x + rank_z*size_x*size_y
-  int rank_z = rank/(size_x*size_y);
-  int rank_y = (rank-rank_z*size_x*size_y)/size_x;
-  int rank_x = rank % size_x;
-
-  //parse GPU-aware setting from cmd line
-  // bool gpu_aware;
-  // gpu_aware = settings.compareSetting("GPU AWARE", "TRUE");
+  //determine (x,y,z) rank coordinates for this processes
+  int rank_x=-1, rank_y=-1, rank_z=-1;
+  RankDecomp3(size_x, size_y, size_z,
+              rank_x, rank_y, rank_z,
+              rank);
 
   if (settings.compareSetting("VERBOSE", "TRUE"))
     settings.report();
@@ -204,13 +155,6 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 
   int Nq = N+1; //number of points in 1D
   int Np = Nq*Nq*Nq; //number of points in full cube
-
-  if (Nvectors) {
-    dfloat *a = (dfloat *) malloc(Nvectors*Nelements*Np*sizeof(dfloat));
-    o_a = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
-    o_b = platform.malloc(Nvectors*Nelements*Np*sizeof(dfloat), a);
-    free(a);
-  }
 
   //Now make array of global indices mimiking a 3D box of cube elements
 
@@ -239,12 +183,12 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     }
   }
 
-  ogs::ogs_t ogs(platform);
+  ogs::ogs_t ogs;
 
   int verbose = 1;
   bool unique = false;
   ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
-            ogs::Auto, unique, verbose);
+            ogs::Auto, unique, verbose, platform);
 
   // for (int n=0; n<Nelements*Np;++n) {
   //   std::cout << "rank " << rank << " id[" << n << "] = " << ids[n] << std::endl;
@@ -382,27 +326,26 @@ int main(int argc, char **argv){
   platform_t platform(settings);
 
   //Trigger JIT kernel builds
-  ogs::InitializeKernels(platform, ogs_dfloat, ogs::Add);
+  ogs::InitializeKernels(platform, ogs::Dfloat, ogs::Add);
 
   /*************************
    * Setup
    *************************/
   //number of MPI ranks
   int size = platform.size;
+  //global MPI rank
+  int rank = platform.rank;
 
   // find a factorization size = size_x*size_y*size_z such that
   //  size_x>=size_y>=size_z are all 'close' to one another
   int size_x, size_y, size_z;
-  factor3(size, size_x, size_y, size_z);
+  Factor3(size, size_x, size_y, size_z);
 
-  //global MPI rank
-  int rank = platform.rank;
-
-  //find our coordinates in the MPI grid such that
-  // rank = rank_x + rank_y*size_x + rank_z*size_x*size_y
-  int rank_z = rank/(size_x*size_y);
-  int rank_y = (rank-rank_z*size_x*size_y)/size_x;
-  int rank_x = rank % size_x;
+  //determine (x,y,z) rank coordinates for this processes
+  int rank_x=-1, rank_y=-1, rank_z=-1;
+  RankDecomp3(size_x, size_y, size_z,
+              rank_x, rank_y, rank_z,
+              rank);
 
   //number of cubes in each dimension
   dlong NX, NY, NZ; //global

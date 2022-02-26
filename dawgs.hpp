@@ -33,6 +33,8 @@ SOFTWARE.
 
 #define DDAWGS DAWGS_DIR
 
+using namespace libp;
+
 class dawgsSettings_t: public settings_t {
 public:
   dawgsSettings_t(const int argc, char** argv, MPI_Comm& _comm);

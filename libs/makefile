@@ -2,7 +2,7 @@
 #
 #The MIT License (MIT)
 #
-#Copyright (c) 2017-2021 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+#Copyright (c) 2017 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 #
 #Permission is hereby granted, free of charge, to any person obtaining a copy
 #of this software and associated documentation files (the "Software"), to deal
@@ -39,7 +39,7 @@ Libraries makefile targets:
 Usage:
 
 make all
-	 Build core, ogs libraries.
+	 Build core and ogs libraries.
 make {lib}
 	 Build only {lib} library.
 make clean
@@ -57,7 +57,9 @@ Can use "make verbose=true" for verbose output.
 
 endef
 
-ifeq (,$(filter core ogs clean clean-libs clean-kernels realclean info help, $(MAKECMDGOALS)))
+ifeq (,$(filter core ogs \
+								clean clean-kernels \
+								realclean info help, $(MAKECMDGOALS)))
 ifneq (,$(MAKECMDGOALS))
 $(error ${LIB_HELP_MSG})
 endif
@@ -71,9 +73,6 @@ include ../make.top
 endif
 endif
 
-#third party
-GS_DIR=${LIBP_TPL_DIR}/gslib
-
 #libraries
 LIBCORE_DIR=${LIBP_LIBS_DIR}/core
 LIBOGS_DIR=${LIBP_LIBS_DIR}/ogs
@@ -83,11 +82,7 @@ INCLUDES=${LIBP_INCLUDES}
 
 #defines
 LIBCORE_DEFINES=-DLIBP_DIR='"${LIBP_DIR}"'
-LIBOGS_DEFINES=-DLIBP_DIR='"${LIBP_DIR}"'  -DOGS_DIR='"${LIBOGS_DIR}"'
-
-ifneq (,${gpu-aware-mpi})
-	LIBOGS_DEFINES+= -DGPU_AWARE_MPI
-endif
+LIBOGS_DEFINES=-DOGS_DIR='"${LIBOGS_DIR}"'
 
 #.cpp compilation flags
 LIB_CXXFLAGS=${LIBP_DEFINES} ${LIBP_MPICXXFLAGS} ${INCLUDES}
@@ -96,8 +91,7 @@ LIB_CXXFLAGS=${LIBP_DEFINES} ${LIBP_MPICXXFLAGS} ${INCLUDES}
 LIB_DEPS=$(wildcard $(LIBP_INCLUDE_DIR)/*.h)  \
 				 $(wildcard ${LIBP_INCLUDE_DIR}/*.hpp)
 
-LIBOGS_DEPS=$(wildcard ${LIBP_INCLUDE_DIR}/ogs/*.h)   \
-						$(wildcard ${LIBP_INCLUDE_DIR}/ogs/*.hpp) \
+LIBOGS_DEPS=$(wildcard ${LIBP_INCLUDE_DIR}/ogs/*.hpp) \
 						${LIB_DEPS}
 
 LIBCORE_SRC =$(wildcard core/*.cpp)
@@ -106,7 +100,9 @@ LIBOGS_SRC =$(wildcard ogs/*.cpp)
 LIBCORE_OBJS=$(LIBCORE_SRC:.cpp=.o)
 LIBOGS_OBJS=$(LIBOGS_SRC:.cpp=.o)
 
-.PHONY: all core ogs clean silentUpdate-core silentUpdate-ogs
+.PHONY: all core ogs \
+				clean clean-kernels realclean \
+				silentUpdate-core silentUpdate-ogs
 
 all: core ogs
 
@@ -135,8 +131,11 @@ silentUpdate-core:
 silentUpdate-ogs:
 	@true
 
+${OCCA_DIR}/lib/libocca.so:
+	${MAKE} -C ${OCCA_DIR}
+
 # rule for .cpp files
-core/%.o: core/%.cpp $(LIB_DEPS)
+core/%.o: core/%.cpp $(LIB_DEPS) ${OCCA_DIR}/lib/libocca.so
 ifneq (,${verbose})
 	$(LIBP_MPICXX) -o $@ -c $< ${LIBCORE_DEFINES} $(LIB_CXXFLAGS)
 else
@@ -157,8 +156,10 @@ clean:
 	rm -f core/*.o ogs/*.o *.a
 
 clean-kernels: clean
-#   $(shell ${OCCA_DIR}/bin/occa clear all -y)
-	rm -rf ~/.occa/
+	rm -rf ${LIBP_DIR}/.occa
+
+realclean: clean
+	${MAKE} -C ${OCCA_DIR} clean
 
 help:
 	$(info $(value LIB_HELP_MSG))

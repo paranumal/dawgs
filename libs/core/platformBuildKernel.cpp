@@ -2,7 +2,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2017-2021 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
+Copyright (c) 2020 Tim Warburton, Noel Chalmers, Jesse Chan, Ali Karakus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,8 +26,12 @@ SOFTWARE.
 
 #include "platform.hpp"
 
+namespace libp {
+
 occa::kernel platform_t::buildKernel(std::string fileName, std::string kernelName,
                                      occa::properties& kernelInfo){
+
+  assertInitialized();
 
   occa::kernel kernel;
 
@@ -45,3 +49,5 @@ occa::kernel platform_t::buildKernel(std::string fileName, std::string kernelNam
 
   return kernel;
 }
+
+} //namespace libp
