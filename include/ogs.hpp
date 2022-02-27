@@ -222,7 +222,7 @@ public:
   ~ogs_t()=default;
 
   void Setup(const dlong _N,
-             hlong *ids,
+             memory<hlong> ids,
              MPI_Comm _comm,
              const Kind _kind,
              const Method method,
@@ -230,7 +230,7 @@ public:
              const bool verbose,
              platform_t& _platform);
 
-  void SetupGlobalToLocalMapping(dlong *GlobalToLocal);
+  void SetupGlobalToLocalMapping(memory<dlong> GlobalToLocal);
 
   // host versions
   void GatherScatter(void* v,
@@ -325,7 +325,7 @@ public:
   dlong Nhalo=0;
 
   void Setup(const dlong _N,
-             hlong *ids,
+             memory<hlong> ids,
              MPI_Comm _comm,
              const Method method,
              const bool verbose,

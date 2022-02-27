@@ -66,7 +66,7 @@ public:
   virtual ~ogsBase_t()=default;
 
   virtual void Setup(const dlong _N,
-                      hlong *ids,
+                      memory<hlong> ids,
                       MPI_Comm _comm,
                       const Kind _kind,
                       const Method method,

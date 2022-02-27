@@ -41,7 +41,7 @@ namespace libp {
 namespace ogs {
 
 void ogs_t::Setup(const dlong _N,
-                  hlong *ids,
+                  memory<hlong> ids,
                   MPI_Comm _comm,
                   const Kind _kind,
                   const Method method,
@@ -52,7 +52,7 @@ void ogs_t::Setup(const dlong _N,
 }
 
 void halo_t::Setup(const dlong _N,
-                  hlong *ids,
+                  memory<hlong> ids,
                   MPI_Comm _comm,
                   const Method method,
                   const bool verbose,
@@ -66,7 +66,7 @@ void halo_t::Setup(const dlong _N,
  * Setup
  ********************************/
 void ogsBase_t::Setup(const dlong _N,
-                      hlong *ids,
+                      memory<hlong> ids,
                       MPI_Comm _comm,
                       const Kind _kind,
                       const Method method,
@@ -873,7 +873,7 @@ void ogsBase_t::AssertGatherDefined() {
 }
 
 //Populate the local mapping of the original ids and the gathered ordering
-void ogs_t::SetupGlobalToLocalMapping(dlong *GlobalToLocal) {
+void ogs_t::SetupGlobalToLocalMapping(memory<dlong> GlobalToLocal) {
 
   //Note: Must have GlobalToLocal have N entries.
 
@@ -885,9 +885,9 @@ void ogs_t::SetupGlobalToLocalMapping(dlong *GlobalToLocal) {
   for (dlong n=0;n<N;n++)
     GlobalToLocal[n] = -1;
 
-  gatherLocal->Scatter(GlobalToLocal, ids.ptr(),
+  gatherLocal->Scatter(GlobalToLocal.ptr(), ids.ptr(),
                        1, Dlong, Add, NoTrans);
-  gatherHalo->Scatter(GlobalToLocal, ids.ptr()+NlocalT,
+  gatherHalo->Scatter(GlobalToLocal.ptr(), ids.ptr()+NlocalT,
                        1, Dlong, Add, NoTrans);
 }
 

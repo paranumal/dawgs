@@ -24,9 +24,14 @@ SOFTWARE.
 */
 
 #include "dawgs.hpp"
+#include <random>
 
-void CorrectnessTest(const int N, dfloat *qtest, dfloat *qcheck,
-                     const hlong *ids, const std::string testName, MPI_Comm comm) {
+void CorrectnessTest(const int N,
+                     memory<dfloat> qtest,
+                     memory<dfloat> qcheck,
+                     const memory<hlong> ids,
+                     const std::string testName,
+                     MPI_Comm comm) {
 
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -149,9 +154,9 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   dlong Nelements = nx*ny*nz;
 
   //find what global offsets my indices will start at
-  dlong NX_offset = rank_x * (NX/size_x) + ((rank_x < (NX % size_x)) ? rank_x : (NX % size_x));
-  dlong NY_offset = rank_y * (NY/size_y) + ((rank_y < (NY % size_y)) ? rank_y : (NY % size_y));
-  dlong NZ_offset = rank_z * (NZ/size_z) + ((rank_z < (NZ % size_z)) ? rank_z : (NZ % size_z));
+  hlong NX_offset = rank_x * (NX/size_x) + ((rank_x < (NX % size_x)) ? rank_x : (NX % size_x));
+  hlong NY_offset = rank_y * (NY/size_y) + ((rank_y < (NY % size_y)) ? rank_y : (NY % size_y));
+  hlong NZ_offset = rank_z * (NZ/size_z) + ((rank_z < (NZ % size_z)) ? rank_z : (NZ % size_z));
 
   int Nq = N+1; //number of points in 1D
   int Np = Nq*Nq*Nq; //number of points in full cube
@@ -159,13 +164,13 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   //Now make array of global indices mimiking a 3D box of cube elements
 
   // hlong is usually a 64-bit integer type
-  hlong *ids = (hlong *) malloc(Nelements*Np*sizeof(hlong));
+  memory<hlong> ids(Nelements*Np);
 
   for (int K=0;K<nz;K++) {
     for (int J=0;J<ny;J++) {
       for (int I=0;I<nx;I++) {
 
-        hlong *ids_e = ids + (I + J*nx + K*nx*ny)*Np;
+        hlong *ids_e = ids.ptr() + (I + J*nx + K*nx*ny)*Np;
 
         hlong baseId =  (I + NX_offset)*N
                       + (J + NY_offset)*N*(N*NX+1)
@@ -197,13 +202,17 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   int K = 1;
 
   //make an array
-  dfloat *q = (dfloat *) malloc(K*Nelements*Np*sizeof(dfloat));
+  memory<dfloat> q(K*Nelements*Np);
 
-  //fill with ones
-  for (dlong n=0;n<K*Nelements*Np;n++) q[n]=1.0;
+  /*Create rng*/
+  std::mt19937 RNG = std::mt19937(rank);
+  std::uniform_real_distribution<> distrib(-0.25, 0.25);
+
+  //fill with random numbers
+  for (dlong n=0;n<K*Nelements*Np;n++) q[n]=distrib(RNG);
 
   //make a device array o_q, copying q from host on creation
-  occa::memory o_q = platform.malloc(K*Nelements*Np*sizeof(dfloat), q);
+  occa::memory o_q = platform.malloc(K*Nelements*Np, q);
 
 
   // if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
@@ -212,7 +221,7 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
      *************************/
     //make a host gs handle (calls gslib)
     int iunique = 0;
-    void *gsHandle = gsSetup(comm, Nelements*Np, ids, iunique, verbose);
+    void *gsHandle = gsSetup(comm, Nelements*Np, ids.ptr(), iunique, verbose);
 
     if (rank==0) {
       std::cout << "Ranks = " << size << ", ";
@@ -223,39 +232,39 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 
 
     //populate an array with the result we expect
-    dfloat *qcheck = (dfloat *) malloc(K*Nelements*Np*sizeof(dfloat));
+    memory<dfloat> qcheck(K*Nelements*Np);
+    qcheck.copyFrom(q);
 
     for (dlong n=0;n<K*Nelements*Np;n++) qcheck[n] = q[n];
 
     //make the golden result
     int transpose = 0;
-    gsGatherScatterVec(qcheck, K, gsHandle, transpose);
+    gsGatherScatterVec(qcheck.ptr(), K, gsHandle, transpose);
 
-    dfloat *qtest = (dfloat *) malloc(K*Nelements*Np*sizeof(dfloat));
+    memory<dfloat> qtest(K*Nelements*Np);
 
     for (dlong n=0;n<K*Nelements*Np;n++) qtest[n] = q[n];
 
     occa::memory o_gq = platform.malloc(K*ogs.Ngather*sizeof(dfloat));
-    dfloat* gq = (dfloat *) malloc(K*ogs.Ngather*sizeof(dfloat));
+    memory<dfloat> gq(K*ogs.Ngather);
 
     //call a gatherScatter operation
     // ogs.GatherScatter(qtest, ogs::Dfloat, ogs::Trans);
     // ogs.Gather (gq,     q, ogs::Dfloat, ogs::Trans);
     // ogs.Scatter(qtest, gq, ogs::Dfloat, ogs::Trans);
 
-    o_q.copyFrom(q);
+    q.copyTo(o_q);
     ogs.GatherScatter(o_q, K, ogs::Dfloat, ogs::Add, ogs::Sym);
     // ogs.Gather (o_gq, o_q, K, ogs::Dfloat, ogs::Add, ogs::Trans);
     // ogs.Scatter(o_q, o_gq, K, ogs::Dfloat, ogs::Add, ogs::Trans);
-    o_q.copyTo(qtest);
+    qtest.copyFrom(o_q);
 
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "GatherScatter", comm);
 
-    dlong *GlobalToLocal = new dlong[Nelements*Np];
+    memory<dlong> GlobalToLocal(Nelements*Np);
     ogs.SetupGlobalToLocalMapping(GlobalToLocal);
 
-    free(gq);
 #if 0
   } else {
     /*************************
@@ -307,9 +316,6 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     }
   }
 #endif
-
-
-  free(ids);
 }
 
 int main(int argc, char **argv){

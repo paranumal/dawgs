@@ -139,7 +139,7 @@ public:
   template <typename T>
   occa::memory malloc(const size_t count,
                       const libp::memory<T> &src,
-                      const occa::properties &prop) {
+                      const occa::properties &prop = occa::properties()) {
     assertInitialized();
     return device.malloc(count*sizeof(T), src.ptr(), prop);
   }
