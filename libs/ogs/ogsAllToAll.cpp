@@ -39,80 +39,106 @@ namespace libp {
 
 namespace ogs {
 
-void ogsAllToAll_t::Start(const int k,
-                          const Type type,
-                          const Op op,
-                          const Transpose trans,
-                          const bool host){
+/**********************************
+* Host exchange
+***********************************/
+template<typename T>
+inline void ogsAllToAll_t::Start(memory<T> &buf, const int k,
+                          const Op op, const Transpose trans){
 
-  occa::device &device = platform.device;
+  memory<T> sendBuf = h_sendspace;
 
-  //get current stream
-  occa::stream currentStream = device.getStream();
+  // extract the send buffer
+  if (trans == NoTrans)
+    extract(NsendN, k, sendIdsN, buf, sendBuf);
+  else
+    extract(NsendT, k, sendIdsT, buf, sendBuf);
 
-  const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
-  const dlong N     = (trans == NoTrans) ? NhaloP : Nhalo;
+  T* sendPtr = sendBuf.ptr();
+  T* recvPtr = buf.ptr() + Nhalo*k;
 
-  if (Nsend) {
-    if (gpu_aware && !host) {
-      //if using gpu-aware mpi and exchanging device buffers,
-      //  assemble the send buffer on device
-      if (trans == NoTrans) {
-        extractKernel[type](NsendN, k, o_sendIdsN, o_haloBuf, o_sendBuf);
-      } else {
-        extractKernel[type](NsendT, k, o_sendIdsT, o_haloBuf, o_sendBuf);
-      }
-      //if not overlapping, wait for kernel to finish on default stream
-      device.finish();
-    } else if (!host) {
-      //if not using gpu-aware mpi and exchanging device buffers,
-      // move the halo buffer to the host
-      device.setStream(dataStream);
-      const size_t Nbytes = k*Sizeof(type);
-      o_haloBuf.copyTo(haloBuf, N*Nbytes, 0, "async: true");
-      device.setStream(currentStream);
+  if (trans==NoTrans) {
+    for (int r=0;r<size;++r) {
+      sendCounts[r] = k*mpiSendCountsN[r];
+      recvCounts[r] = k*mpiRecvCountsN[r];
+      sendOffsets[r+1] = k*mpiSendOffsetsN[r+1];
+      recvOffsets[r+1] = k*mpiRecvOffsetsN[r+1];
     }
+  } else {
+    for (int r=0;r<size;++r) {
+      sendCounts[r] = k*mpiSendCountsT[r];
+      recvCounts[r] = k*mpiRecvCountsT[r];
+      sendOffsets[r+1] = k*mpiSendOffsetsT[r+1];
+      recvOffsets[r+1] = k*mpiRecvOffsetsT[r+1];
+    }
+  }
+
+  // collect everything needed with single MPI all to all
+  MPI_Ialltoallv(sendPtr, sendCounts.ptr(), sendOffsets.ptr(), mpiType<T>::get(),
+                 recvPtr, recvCounts.ptr(), recvOffsets.ptr(), mpiType<T>::get(),
+                 comm, &request);
+}
+
+template<typename T>
+inline void ogsAllToAll_t::Finish(memory<T> &buf, const int k,
+                           const Op op, const Transpose trans){
+
+  MPI_Wait(&request, MPI_STATUS_IGNORE);
+
+  //if we recvieved anything via MPI, gather the recv buffer and scatter
+  // it back to to original vector
+  dlong Nrecv = recvOffsets[size];
+  if (Nrecv) {
+    // gather the recieved nodes
+    postmpi.Gather(buf, buf, k, op, trans);
   }
 }
 
+void ogsAllToAll_t::Start(memory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(memory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(memory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(memory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(memory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(memory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
 
-void ogsAllToAll_t::Finish(const int k,
-                           const Type type,
-                           const Op op,
-                           const Transpose trans,
-                           const bool host){
-
-  const size_t Nbytes = k*Sizeof(type);
-  occa::device &device = platform.device;
-
-  //get current stream
-  occa::stream currentStream = device.getStream();
+/**********************************
+* GPU-aware exchange
+***********************************/
+void ogsAllToAll_t::Start(occa::memory &o_buf,
+                          const int k,
+                          const Type type,
+                          const Op op,
+                          const Transpose trans){
 
   const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
 
-  if (Nsend && !gpu_aware && !host) {
-    //synchronize data stream to ensure the host buffer is on the host
-    device.setStream(dataStream);
+  if (Nsend) {
+    occa::memory o_sendBuf = o_sendspace;
+
+    // assemble the send buffer on device
+    if (trans == NoTrans) {
+      extractKernel[type](NsendN, k, o_sendIdsN, o_buf, o_sendBuf);
+    } else {
+      extractKernel[type](NsendT, k, o_sendIdsT, o_buf, o_sendBuf);
+    }
+    //wait for kernel to finish on default stream
+    occa::device &device = platform.device;
     device.finish();
-    device.setStream(currentStream);
   }
+}
 
-  //if the halo data is on the host, extract the send buffer
-  if (host || !gpu_aware) {
-    if (trans == NoTrans)
-      extract(NsendN, k, type, sendIdsN.ptr(), haloBuf, sendBuf);
-    else
-      extract(NsendT, k, type, sendIdsT.ptr(), haloBuf, sendBuf);
-  }
+void ogsAllToAll_t::Finish(occa::memory &o_buf,
+                           const int k,
+                           const Type type,
+                           const Op op,
+                           const Transpose trans){
 
-  char *sendPtr, *recvPtr;
-  if (gpu_aware && !host) { //device pointer
-    sendPtr = static_cast<char*>(o_sendBuf.ptr());
-    recvPtr = static_cast<char*>(o_haloBuf.ptr()) + Nhalo*Nbytes;
-  } else { //host pointer
-    sendPtr = sendBuf;
-    recvPtr = haloBuf + Nhalo*Nbytes;
-  }
+  const size_t Nbytes = k*Sizeof(type);
+
+  char* sendPtr = static_cast<char*>(o_sendspace.ptr());
+  char* recvPtr = static_cast<char*>(o_buf.ptr()) + Nhalo*Nbytes;
 
   if (trans==NoTrans) {
     for (int r=0;r<size;++r) {
@@ -139,32 +165,18 @@ void ogsAllToAll_t::Finish(const int k,
   // it back to to original vector
   dlong Nrecv = recvOffsets[size];
   if (Nrecv) {
-    if (!gpu_aware || host) {
-      //if not gpu-aware or recieved data is on the host,
-      // gather the recieved nodes
-      postmpi.Gather(haloBuf, haloBuf, k, type, op, trans);
-
-      if (!host) {
-        // copy recv back to device
-        device.setStream(dataStream);
-        const dlong N = (trans == Trans) ? NhaloP : Nhalo;
-        o_haloBuf.copyFrom(haloBuf, N*Nbytes, 0, "async: true");
-        device.finish(); //wait for transfer to finish
-        device.setStream(currentStream);
-      }
-    } else {
-      // gather the recieved nodes on device
-      postmpi.Gather(o_haloBuf, o_haloBuf, k, type, op, trans);
-    }
+    // gather the recieved nodes on device
+    postmpi.Gather(o_buf, o_buf, k, type, op, trans);
   }
 }
 
 ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
                              libp::memory<parallelNode_t> &sharedNodes,
                              ogsOperator_t& gatherHalo,
+                             occa::stream _dataStream,
                              MPI_Comm _comm,
                              platform_t &_platform):
-  ogsExchange_t(_platform,_comm) {
+  ogsExchange_t(_platform,_comm, _dataStream) {
 
   Nhalo  = gatherHalo.NrowsT;
   NhaloP = gatherHalo.NrowsN;
@@ -255,7 +267,7 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
   libp::memory<dlong> haloGatherTCounts(Nhalo);
   libp::memory<dlong> haloGatherNCounts(Nhalo);
 
-  //count the data that will already be in haloBuf
+  //count the data that will already be in h_haloBuf.ptr()
   for (dlong n=0;n<Nhalo;n++) {
     haloGatherNCounts[n] = (n<NhaloP) ? 1 : 0;
     haloGatherTCounts[n] = 1;
@@ -333,15 +345,17 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
 }
 
 void ogsAllToAll_t::AllocBuffer(size_t Nbytes) {
-  if (o_haloBuf.size() < postmpi.nnzT*Nbytes) {
-    if (o_haloBuf.size()) o_haloBuf.free();
-    haloBuf = static_cast<char*>(platform.hostMalloc(postmpi.nnzT*Nbytes,  nullptr, h_haloBuf));
-    o_haloBuf = platform.malloc(postmpi.nnzT*Nbytes);
+  if (o_workspace.size() < postmpi.nnzT*Nbytes) {
+    if (o_workspace.size()) o_workspace.free();
+    // h_haloBuf.ptr() = static_cast<char*>(platform.hostMalloc(postmpi.nnzT*Nbytes,  nullptr, h_haloBuf));
+    h_workspace.malloc(postmpi.nnzT*Nbytes);
+    o_workspace = platform.malloc(postmpi.nnzT*Nbytes);
   }
-  if (o_sendBuf.size() < NsendT*Nbytes) {
-    if (o_sendBuf.size()) o_sendBuf.free();
-    sendBuf = static_cast<char*>(platform.hostMalloc(NsendT*Nbytes,  nullptr, h_sendBuf));
-    o_sendBuf = platform.malloc(NsendT*Nbytes);
+  if (o_sendspace.size() < NsendT*Nbytes) {
+    if (o_sendspace.size()) o_sendspace.free();
+    // sendBuf = static_cast<char*>(platform.hostMalloc(NsendT*Nbytes,  nullptr, h_sendBuf));
+    h_sendspace.malloc(NsendT*Nbytes);
+    o_sendspace = platform.malloc(NsendT*Nbytes);
   }
 }
 

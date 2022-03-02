@@ -37,7 +37,7 @@ void CorrectnessTest(const int N,
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   for (dlong n=0;n<N;n++) {
-    if (fabs(qtest[n]-qcheck[n])>0.0) {
+    if (fabs(qtest[n]-qcheck[n])>1.0e-6) {
       printf("Rank %d, Entry %d, baseId %lld q = %f, qRef = %f \n", rank, n, ids[n], qtest[n], qcheck[n]);
     }
   }
@@ -219,9 +219,6 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     /*************************
      * Test correctness
      *************************/
-    //make a host gs handle (calls gslib)
-    int iunique = 0;
-    void *gsHandle = gsSetup(comm, Nelements*Np, ids.ptr(), iunique, verbose);
 
     if (rank==0) {
       std::cout << "Ranks = " << size << ", ";
@@ -231,20 +228,22 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     }
 
 
+
+    //make a host gs handle (calls gslib)
+    int iunique = 0;
+    void *gsHandle = gsSetup(comm, Nelements*Np, ids.ptr(), iunique, verbose);
+
     //populate an array with the result we expect
     memory<dfloat> qcheck(K*Nelements*Np);
     qcheck.copyFrom(q);
-
-    for (dlong n=0;n<K*Nelements*Np;n++) qcheck[n] = q[n];
 
     //make the golden result
     int transpose = 0;
     gsGatherScatterVec(qcheck.ptr(), K, gsHandle, transpose);
 
+
+
     memory<dfloat> qtest(K*Nelements*Np);
-
-    for (dlong n=0;n<K*Nelements*Np;n++) qtest[n] = q[n];
-
     occa::memory o_gq = platform.malloc(K*ogs.Ngather*sizeof(dfloat));
     memory<dfloat> gq(K*ogs.Ngather);
 
@@ -255,12 +254,46 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 
     q.copyTo(o_q);
     ogs.GatherScatter(o_q, K, ogs::Dfloat, ogs::Add, ogs::Sym);
-    // ogs.Gather (o_gq, o_q, K, ogs::Dfloat, ogs::Add, ogs::Trans);
-    // ogs.Scatter(o_q, o_gq, K, ogs::Dfloat, ogs::Add, ogs::Trans);
+    qtest.copyFrom(o_q);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    ogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+
+    ogs::ogs_t sogs;
+
+    unique = true;
+    sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+               ogs::Auto, unique, verbose, platform);
+
+    q.copyTo(o_q);
+    sogs.GatherScatter(o_q, K, ogs::Dfloat, ogs::Add, ogs::Sym);
+    qtest.copyFrom(o_q);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    sogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+    q.copyTo(o_q);
+    sogs.Gather (o_gq, o_q, K, ogs::Dfloat, ogs::Add, ogs::Trans);
+    sogs.Scatter(o_q, o_gq, K, ogs::Dfloat, ogs::NoTrans);
     qtest.copyFrom(o_q);
 
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
-                    "GatherScatter", comm);
+                    "Device Gather+Scatter", comm);
+
+    sogs.Gather (gq, q, K, ogs::Add, ogs::Trans);
+    sogs.Scatter(qtest, gq, K, ogs::NoTrans);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host Gather+Scatter", comm);
 
     memory<dlong> GlobalToLocal(Nelements*Np);
     ogs.SetupGlobalToLocalMapping(GlobalToLocal);

@@ -54,10 +54,28 @@ struct parallelNode_t{
 size_t Sizeof(const Type type);
 MPI_Datatype MPI_Type(const Type type);
 
+template<typename T>
+struct mpiType {
+  static constexpr MPI_Datatype get();
+};
+
+template<> struct mpiType<float> {
+  static constexpr MPI_Datatype get() { return MPI_FLOAT; }
+};
+template<> struct mpiType<double> {
+  static constexpr MPI_Datatype get() { return MPI_DOUBLE; }
+};
+template<> struct mpiType<int> {
+  static constexpr MPI_Datatype get() { return MPI_INT; }
+};
+template<> struct mpiType<long long int> {
+  static constexpr MPI_Datatype get() { return MPI_LONG_LONG_INT; }
+};
+
 //permute an array A, according to the ordering returned by P
 // i.e. for all n, A[P(n)] <- A[n]
 template<typename T, class Order>
-void permute(const dlong N, libp::memory<T> A, Order P) {
+void permute(const dlong N, memory<T> A, Order P) {
 
   for(dlong n=0;n<N;++n) {
     //get what index A[n] should move to

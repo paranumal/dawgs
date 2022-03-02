@@ -39,73 +39,112 @@ namespace libp {
 
 namespace ogs {
 
-void ogsPairwise_t::Start(const int k,
-                          const Type type,
-                          const Op op,
-                          const Transpose trans,
-                          const bool host){
+/**********************************
+* Host exchange
+***********************************/
+template<typename T>
+inline void ogsPairwise_t::Start(memory<T> &buf, const int k,
+                          const Op op, const Transpose trans){
 
-  occa::device &device = platform.device;
+  memory<T> sendBuf = h_sendspace;
 
-  //get current stream
-  occa::stream currentStream = device.getStream();
+  T* sendPtr = sendBuf.ptr();
+  T* recvPtr = buf.ptr() + Nhalo*k;
 
-  const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
-  const dlong N     = (trans == NoTrans) ? NhaloP : Nhalo;
+  const int NranksSend  = (trans==NoTrans) ? NranksSendN  : NranksSendT;
+  const int NranksRecv  = (trans==NoTrans) ? NranksRecvN  : NranksRecvT;
+  const int *sendRanks  = (trans==NoTrans) ? sendRanksN.ptr()   : sendRanksT.ptr();
+  const int *recvRanks  = (trans==NoTrans) ? recvRanksN.ptr()   : recvRanksT.ptr();
+  const int *sendCounts = (trans==NoTrans) ? sendCountsN.ptr()  : sendCountsT.ptr();
+  const int *recvCounts = (trans==NoTrans) ? recvCountsN.ptr()  : recvCountsT.ptr();
+  const int *sendOffsets= (trans==NoTrans) ? sendOffsetsN.ptr() : sendOffsetsT.ptr();
+  const int *recvOffsets= (trans==NoTrans) ? recvOffsetsN.ptr() : recvOffsetsT.ptr();
 
-  if (Nsend) {
-    if (gpu_aware && !host) {
-      //if using gpu-aware mpi and exchanging device buffers,
-      //  assemble the send buffer on device
-      if (trans == NoTrans) {
-        extractKernel[type](NsendN, k, o_sendIdsN, o_haloBuf, o_sendBuf);
-      } else {
-        extractKernel[type](NsendT, k, o_sendIdsT, o_haloBuf, o_sendBuf);
-      }
-      //if not overlapping, wait for kernel to finish on default stream
-      device.finish();
-    } else if (!host) {
-      //if not using gpu-aware mpi and exchanging device buffers,
-      // move the halo buffer to the host
-      device.setStream(dataStream);
-      const size_t Nbytes = k*Sizeof(type);
-      o_haloBuf.copyTo(haloBuf, N*Nbytes, 0, "async: true");
-      device.setStream(currentStream);
-    }
+  //post recvs
+  for (int r=0;r<NranksRecv;r++) {
+    MPI_Irecv(recvPtr+recvOffsets[r]*k,
+              k*recvCounts[r], mpiType<T>::get(), recvRanks[r],
+              recvRanks[r], comm, requests.ptr()+r);
+  }
+
+  // extract the send buffer
+  if (trans == NoTrans)
+    extract(NsendN, k, sendIdsN, buf, sendBuf);
+  else
+    extract(NsendT, k, sendIdsT, buf, sendBuf);
+
+  //post sends
+  for (int r=0;r<NranksSend;r++) {
+    MPI_Isend(sendPtr+sendOffsets[r]*k,
+              k*sendCounts[r], mpiType<T>::get(), sendRanks[r],
+              rank, comm, requests.ptr()+NranksRecv+r);
   }
 }
 
+template<typename T>
+inline void ogsPairwise_t::Finish(memory<T> &buf, const int k,
+                           const Op op, const Transpose trans){
 
-void ogsPairwise_t::Finish(const int k,
-                           const Type type,
-                           const Op op,
-                           const Transpose trans,
-                           const bool host){
+  const int NranksSend  = (trans==NoTrans) ? NranksSendN  : NranksSendT;
+  const int NranksRecv  = (trans==NoTrans) ? NranksRecvN  : NranksRecvT;
+  const int *recvOffsets= (trans==NoTrans) ? recvOffsetsN.ptr() : recvOffsetsT.ptr();
 
-  const size_t Nbytes = k*Sizeof(type);
-  occa::device &device = platform.device;
+  MPI_Waitall(NranksRecv+NranksSend, requests.ptr(), statuses.ptr());
 
-  //get current stream
-  occa::stream currentStream = device.getStream();
+  //if we recvieved anything via MPI, gather the recv buffer and scatter
+  // it back to to original vector
+  dlong Nrecv = recvOffsets[NranksRecv];
+  if (Nrecv) {
+    // gather the recieved nodes
+    postmpi.Gather(buf, buf, k, op, trans);
+  }
+}
+
+void ogsPairwise_t::Start(memory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
+void ogsPairwise_t::Start(memory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
+void ogsPairwise_t::Start(memory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
+void ogsPairwise_t::Start(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
+void ogsPairwise_t::Finish(memory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
+void ogsPairwise_t::Finish(memory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
+void ogsPairwise_t::Finish(memory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
+void ogsPairwise_t::Finish(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
+
+/**********************************
+* GPU-aware exchange
+***********************************/
+void ogsPairwise_t::Start(occa::memory &o_buf,
+                          const int k,
+                          const Type type,
+                          const Op op,
+                          const Transpose trans){
 
   const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
 
-  if (Nsend && !gpu_aware && !host) {
-    //synchronize data stream to ensure the host buffer is on the host
-    device.setStream(dataStream);
+  if (Nsend) {
+    occa::memory o_sendBuf = o_sendspace;
+
+    //  assemble the send buffer on device
+    if (trans == NoTrans) {
+      extractKernel[type](NsendN, k, o_sendIdsN, o_buf, o_sendBuf);
+    } else {
+      extractKernel[type](NsendT, k, o_sendIdsT, o_buf, o_sendBuf);
+    }
+    //wait for kernel to finish on default stream
+    occa::device &device = platform.device;
     device.finish();
-    device.setStream(dataStream);
   }
+}
 
+void ogsPairwise_t::Finish(occa::memory &o_buf,
+                           const int k,
+                           const Type type,
+                           const Op op,
+                           const Transpose trans){
 
-  char *sendPtr, *recvPtr;
-  if (gpu_aware && !host) { //device pointer
-    sendPtr = (char*)o_sendBuf.ptr();
-    recvPtr = (char*)o_haloBuf.ptr() + Nhalo*Nbytes;
-  } else { //host pointer
-    sendPtr = sendBuf;
-    recvPtr = haloBuf + Nhalo*Nbytes;
-  }
+  const size_t Nbytes = k*Sizeof(type);
+
+  char* sendPtr = static_cast<char*>(o_sendspace.ptr());
+  char* recvPtr = static_cast<char*>(o_buf.ptr()) + Nhalo*Nbytes;
 
   const int NranksSend  = (trans==NoTrans) ? NranksSendN  : NranksSendT;
   const int NranksRecv  = (trans==NoTrans) ? NranksRecvN  : NranksRecvT;
@@ -123,14 +162,6 @@ void ogsPairwise_t::Finish(const int k,
               recvRanks[r], comm, requests.ptr()+r);
   }
 
-  //if the halo data is on the host, extract the send buffer
-  if (host || !gpu_aware) {
-    if (trans == NoTrans)
-      extract(NsendN, k, type, sendIdsN.ptr(), haloBuf, sendBuf);
-    else
-      extract(NsendT, k, type, sendIdsT.ptr(), haloBuf, sendBuf);
-  }
-
   //post sends
   for (int r=0;r<NranksSend;r++) {
     MPI_Isend(sendPtr+sendOffsets[r]*Nbytes,
@@ -143,34 +174,18 @@ void ogsPairwise_t::Finish(const int k,
   // it back to to original vector
   dlong Nrecv = recvOffsets[NranksRecv];
   if (Nrecv) {
-    if (!gpu_aware || host) {
-      //if not gpu-aware or recieved data is on the host,
-      // gather the recieved nodes
-      postmpi.Gather(haloBuf, haloBuf,
-                      k, type, op, trans);
-
-      if (!host) {
-        // copy recv back to device
-        device.setStream(dataStream);
-        const dlong N = (trans == Trans) ? NhaloP : Nhalo;
-        o_haloBuf.copyFrom(haloBuf, N*Nbytes, 0, "async: true");
-        device.finish(); //wait for transfer to finish
-        device.setStream(currentStream);
-      }
-    } else {
-      // gather the recieved nodes on device
-      postmpi.Gather(o_haloBuf, o_haloBuf,
-                      k, type, op, trans);
-    }
+    // gather the recieved nodes on device
+    postmpi.Gather(o_buf, o_buf, k, type, op, trans);
   }
 }
 
 ogsPairwise_t::ogsPairwise_t(dlong Nshared,
                              libp::memory<parallelNode_t> &sharedNodes,
                              ogsOperator_t& gatherHalo,
+                             occa::stream _dataStream,
                              MPI_Comm _comm,
                              platform_t &_platform):
-  ogsExchange_t(_platform,_comm) {
+  ogsExchange_t(_platform,_comm,_dataStream) {
 
   Nhalo  = gatherHalo.NrowsT;
   NhaloP = gatherHalo.NrowsN;
@@ -261,7 +276,7 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
   libp::memory<dlong> haloGatherTCounts(Nhalo);
   libp::memory<dlong> haloGatherNCounts(Nhalo);
 
-  //count the data that will already be in haloBuf
+  //count the data that will already be in h_haloBuf.ptr()
   for (dlong n=0;n<Nhalo;n++) {
     haloGatherNCounts[n] = (n<NhaloP) ? 1 : 0;
     haloGatherTCounts[n] = 1;
@@ -393,15 +408,17 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
 }
 
 void ogsPairwise_t::AllocBuffer(size_t Nbytes) {
-  if (o_haloBuf.size() < postmpi.nnzT*Nbytes) {
-    if (o_haloBuf.size()) o_haloBuf.free();
-    haloBuf = static_cast<char*>(platform.hostMalloc(postmpi.nnzT*Nbytes,  nullptr, h_haloBuf));
-    o_haloBuf = platform.malloc(postmpi.nnzT*Nbytes);
+  if (o_workspace.size() < postmpi.nnzT*Nbytes) {
+    if (o_workspace.size()) o_workspace.free();
+    // h_workspace.ptr() = static_cast<char*>(platform.hostMalloc(postmpi.nnzT*Nbytes,  nullptr, h_workspace));
+    h_workspace.malloc(postmpi.nnzT*Nbytes);
+    o_workspace = platform.malloc(postmpi.nnzT*Nbytes);
   }
-  if (o_sendBuf.size() < NsendT*Nbytes) {
-    if (o_sendBuf.size()) o_sendBuf.free();
-    sendBuf = static_cast<char*>(platform.hostMalloc(NsendT*Nbytes,  nullptr, h_sendBuf));
-    o_sendBuf = platform.malloc(NsendT*Nbytes);
+  if (o_sendspace.size() < NsendT*Nbytes) {
+    if (o_sendspace.size()) o_sendspace.free();
+    // sendspace = static_cast<char*>(platform.hostMalloc(NsendT*Nbytes,  nullptr, h_sendspace));
+    h_sendspace.malloc(NsendT*Nbytes);
+    o_sendspace = platform.malloc(NsendT*Nbytes);
   }
 }
 

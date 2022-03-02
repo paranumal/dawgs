@@ -61,8 +61,9 @@ public:
   bool unique=false;
   bool gather_defined=false;
 
+  static occa::stream dataStream;
+
   ogsBase_t()=default;
-  ogsBase_t(platform_t& _platform);
   virtual ~ogsBase_t()=default;
 
   virtual void Setup(const dlong _N,
@@ -84,20 +85,20 @@ protected:
 
 private:
   void FindSharedNodes(const dlong Nids,
-                       libp::memory<parallelNode_t> &nodes,
+                       memory<parallelNode_t> &nodes,
                        const int verbose);
 
   void ConstructSharedNodes(const dlong Nids,
-                           libp::memory<parallelNode_t> &nodes,
+                           memory<parallelNode_t> &nodes,
                            dlong &Nshared,
-                           libp::memory<parallelNode_t> &sharedNodes);
+                           memory<parallelNode_t> &sharedNodes);
 
-  void LocalSignedSetup(const dlong Nids, libp::memory<parallelNode_t> &nodes);
-  void LocalUnsignedSetup(const dlong Nids, libp::memory<parallelNode_t> &nodes);
-  void LocalHaloSetup(const dlong Nids, libp::memory<parallelNode_t> &nodes);
+  void LocalSignedSetup(const dlong Nids, memory<parallelNode_t> &nodes);
+  void LocalUnsignedSetup(const dlong Nids, memory<parallelNode_t> &nodes);
+  void LocalHaloSetup(const dlong Nids, memory<parallelNode_t> &nodes);
 
   ogsExchange_t* AutoSetup(dlong Nshared,
-                           libp::memory<parallelNode_t> &sharedNodes,
+                           memory<parallelNode_t> &sharedNodes,
                            ogsOperator_t& gatherHalo,
                            MPI_Comm _comm,
                            platform_t &_platform,

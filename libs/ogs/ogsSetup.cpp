@@ -79,6 +79,9 @@ void ogsBase_t::Setup(const dlong _N,
 
   platform = _platform;
 
+  if (!dataStream.isInitialized())
+      dataStream = platform.device.createStream();
+
   N = _N;
   comm = _comm;
   kind = _kind;
@@ -159,15 +162,18 @@ void ogsBase_t::Setup(const dlong _N,
   if (method == AllToAll) {
     exchange = std::shared_ptr<ogsExchange_t>(
                   new ogsAllToAll_t(Nshared, sharedNodes,
-                                    *gatherHalo, comm, platform));
+                                    *gatherHalo, dataStream,
+                                    comm, platform));
   } else if (method == Pairwise) {
     exchange = std::shared_ptr<ogsExchange_t>(
                   new ogsPairwise_t(Nshared, sharedNodes,
-                                    *gatherHalo, comm, platform));
+                                    *gatherHalo, dataStream,
+                                    comm, platform));
   } else if (method == CrystalRouter) {
     exchange = std::shared_ptr<ogsExchange_t>(
                   new ogsCrystalRouter_t(Nshared, sharedNodes,
-                                         *gatherHalo, comm, platform));
+                                         *gatherHalo, dataStream,
+                                         comm, platform));
   } else { //Auto
     exchange = std::shared_ptr<ogsExchange_t>(
                   AutoSetup(Nshared, sharedNodes,
@@ -885,10 +891,10 @@ void ogs_t::SetupGlobalToLocalMapping(memory<dlong> GlobalToLocal) {
   for (dlong n=0;n<N;n++)
     GlobalToLocal[n] = -1;
 
-  gatherLocal->Scatter(GlobalToLocal.ptr(), ids.ptr(),
-                       1, Dlong, Add, NoTrans);
-  gatherHalo->Scatter(GlobalToLocal.ptr(), ids.ptr()+NlocalT,
-                       1, Dlong, Add, NoTrans);
+  gatherLocal->Scatter(GlobalToLocal, ids,
+                       1, NoTrans);
+  gatherHalo->Scatter(GlobalToLocal, ids+NlocalT,
+                       1, NoTrans);
 }
 
 void halo_t::SetupFromGather(ogs_t& ogs) {

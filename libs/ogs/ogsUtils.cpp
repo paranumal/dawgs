@@ -64,12 +64,13 @@ void DestroyMPIType() {
   MPI_Type_free(&MPI_PARALLELNODE_T);
 }
 
+occa::stream ogsBase_t::dataStream;
+
 occa::kernel ogsOperator_t::gatherScatterKernel[4][4];
 occa::kernel ogsOperator_t::gatherKernel[4][4];
 occa::kernel ogsOperator_t::scatterKernel[4];
 
 occa::kernel ogsExchange_t::extractKernel[4];
-occa::stream ogsExchange_t::dataStream;
 
 
 void InitializeKernels(platform_t& platform, const Type type, const Op op) {

@@ -43,10 +43,10 @@ public:
 
   dlong Nhalo, NhaloP;
 
-  char* haloBuf;
-  occa::memory o_haloBuf, h_haloBuf;
+  memory<std::byte> h_workspace, h_sendspace;
+  occa::memory o_workspace, o_sendspace;
 
-  static occa::stream dataStream;
+  occa::stream dataStream;
   static occa::kernel extractKernel[4];
 
 #ifdef GPU_AWARE_MPI
@@ -55,27 +55,35 @@ public:
   bool gpu_aware=false;
 #endif
 
-  ogsExchange_t(platform_t &_platform, MPI_Comm _comm):
+  ogsExchange_t(platform_t &_platform, MPI_Comm _comm,
+                occa::stream _datastream):
     platform(_platform),
-    comm(_comm) {
+    comm(_comm),
+    dataStream(_datastream) {
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
-
-    if (!dataStream.isInitialized())
-      dataStream = platform.device.createStream();
   }
   virtual ~ogsExchange_t() {}
 
-  virtual void Start(const int k,
+  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
+
+  virtual void Start(occa::memory &o_buf,
+                     const int k,
                      const Type type,
                      const Op op,
-                     const Transpose trans,
-                     const bool host=false)=0;
-  virtual void Finish(const int k,
+                     const Transpose trans)=0;
+  virtual void Finish(occa::memory &o_buf,
+                      const int k,
                       const Type type,
                       const Op op,
-                      const Transpose trans,
-                      const bool host=false)=0;
+                      const Transpose trans)=0;
 
   virtual void AllocBuffer(size_t Nbytes)=0;
 
@@ -87,46 +95,66 @@ class ogsAllToAll_t: public ogsExchange_t {
 private:
 
   dlong NsendN=0, NsendT=0;
-  libp::memory<dlong> sendIdsN, sendIdsT;
+  memory<dlong> sendIdsN, sendIdsT;
   occa::memory o_sendIdsN, o_sendIdsT;
 
   ogsOperator_t postmpi;
 
-  char* sendBuf;
-  occa::memory o_sendBuf;
-  occa::memory h_sendBuf;
+  memory<int> mpiSendCountsN;
+  memory<int> mpiSendCountsT;
+  memory<int> mpiRecvCountsN;
+  memory<int> mpiRecvCountsT;
+  memory<int> mpiSendOffsetsN;
+  memory<int> mpiSendOffsetsT;
+  memory<int> mpiRecvOffsetsN;
+  memory<int> mpiRecvOffsetsT;
 
-  libp::memory<int> mpiSendCountsN;
-  libp::memory<int> mpiSendCountsT;
-  libp::memory<int> mpiRecvCountsN;
-  libp::memory<int> mpiRecvCountsT;
-  libp::memory<int> mpiSendOffsetsN;
-  libp::memory<int> mpiSendOffsetsT;
-  libp::memory<int> mpiRecvOffsetsN;
-  libp::memory<int> mpiRecvOffsetsT;
+  memory<int> sendCounts;
+  memory<int> recvCounts;
+  memory<int> sendOffsets;
+  memory<int> recvOffsets;
 
-  libp::memory<int> sendCounts;
-  libp::memory<int> recvCounts;
-  libp::memory<int> sendOffsets;
-  libp::memory<int> recvOffsets;
+  MPI_Request request;
 
 public:
   ogsAllToAll_t(dlong Nshared,
-               libp::memory<parallelNode_t> &sharedNodes,
+               memory<parallelNode_t> &sharedNodes,
                ogsOperator_t &gatherHalo,
+               occa::stream _dataStream,
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(const int k,
+  template<typename T>
+  void Start(memory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  template<typename T>
+  void Finish(memory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+
+  virtual void Start(occa::memory &o_buf,
+                     const int k,
                      const Type type,
                      const Op op,
-                     const Transpose trans,
-                     const bool host=false);
-  virtual void Finish(const int k,
+                     const Transpose trans);
+  virtual void Finish(occa::memory &o_buf,
+                      const int k,
                       const Type type,
                       const Op op,
-                      const Transpose trans,
-                      const bool host=false);
+                      const Transpose trans);
 
   virtual void AllocBuffer(size_t Nbytes);
 
@@ -137,49 +165,67 @@ class ogsPairwise_t: public ogsExchange_t {
 private:
 
   dlong NsendN=0, NsendT=0;
-  libp::memory<dlong> sendIdsN, sendIdsT;
+  memory<dlong> sendIdsN, sendIdsT;
   occa::memory o_sendIdsN, o_sendIdsT;
 
   ogsOperator_t postmpi;
 
-  char* sendBuf;
-  occa::memory o_sendBuf;
-  occa::memory h_sendBuf;
-
   int NranksSendN=0, NranksRecvN=0;
   int NranksSendT=0, NranksRecvT=0;
-  libp::memory<int> sendRanksN;
-  libp::memory<int> sendRanksT;
-  libp::memory<int> recvRanksN;
-  libp::memory<int> recvRanksT;
-  libp::memory<int> sendCountsN;
-  libp::memory<int> sendCountsT;
-  libp::memory<int> recvCountsN;
-  libp::memory<int> recvCountsT;
-  libp::memory<int> sendOffsetsN;
-  libp::memory<int> sendOffsetsT;
-  libp::memory<int> recvOffsetsN;
-  libp::memory<int> recvOffsetsT;
-  libp::memory<MPI_Request> requests;
-  libp::memory<MPI_Status> statuses;
+  memory<int> sendRanksN;
+  memory<int> sendRanksT;
+  memory<int> recvRanksN;
+  memory<int> recvRanksT;
+  memory<int> sendCountsN;
+  memory<int> sendCountsT;
+  memory<int> recvCountsN;
+  memory<int> recvCountsT;
+  memory<int> sendOffsetsN;
+  memory<int> sendOffsetsT;
+  memory<int> recvOffsetsN;
+  memory<int> recvOffsetsT;
+  memory<MPI_Request> requests;
+  memory<MPI_Status> statuses;
 
 public:
   ogsPairwise_t(dlong Nshared,
-               libp::memory<parallelNode_t> &sharedNodes,
+               memory<parallelNode_t> &sharedNodes,
                ogsOperator_t &gatherHalo,
+               occa::stream _dataStream,
                MPI_Comm _comm,
                platform_t &_platform);
 
-  virtual void Start(const int k,
+  template<typename T>
+  void Start(memory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  template<typename T>
+  void Finish(memory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+
+  virtual void Start(occa::memory &o_buf,
+                     const int k,
                      const Type type,
                      const Op op,
-                     const Transpose trans,
-                     const bool host=false);
-  virtual void Finish(const int k,
+                     const Transpose trans);
+  virtual void Finish(occa::memory &o_buf,
+                      const int k,
                       const Type type,
                       const Op op,
-                      const Transpose trans,
-                      const bool host=false);
+                      const Transpose trans);
 
   virtual void AllocBuffer(size_t Nbytes);
 };
@@ -195,48 +241,64 @@ private:
     int Nsend, Nrecv0, Nrecv1;
     dlong recvOffset;
 
-    libp::memory<dlong> sendIds;
+    memory<dlong> sendIds;
     occa::memory o_sendIds;
 
     ogsOperator_t gather;
   };
 
-  int buf_id=0;
-  occa::memory o_buf[2];
-  occa::memory h_buf[2];
-  char* buf[2];
+  int buf_id=0, hbuf_id=0;
+  occa::memory o_work[2];
+  memory<std::byte> h_work[2];
 
   MPI_Request request[3];
   MPI_Status status[3];
 
   int Nlevels=0;
-  libp::memory<crLevel> levelsN;
-  libp::memory<crLevel> levelsT;
+  memory<crLevel> levelsN;
+  memory<crLevel> levelsT;
 
   int NsendMax=0, NrecvMax=0;
-  char* sendBuf;
-  char* recvBuf;
-  occa::memory o_sendBuf;
-  occa::memory h_sendBuf;
-  occa::memory o_recvBuf;
 
 public:
   ogsCrystalRouter_t(dlong Nshared,
-                   libp::memory<parallelNode_t> &sharedNodes,
+                   memory<parallelNode_t> &sharedNodes,
                    ogsOperator_t &gatherHalo,
+                   occa::stream _dataStream,
                    MPI_Comm _comm,
                    platform_t &_platform);
 
-  virtual void Start(const int k,
+  template<typename T>
+  void Start(memory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  template<typename T>
+  void Finish(memory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+
+  virtual void Start(occa::memory &o_buf,
+                     const int k,
                      const Type type,
                      const Op op,
-                     const Transpose trans,
-                     const bool host=false);
-  virtual void Finish(const int k,
+                     const Transpose trans);
+  virtual void Finish(occa::memory &o_buf,
+                      const int k,
                       const Type type,
                       const Op op,
-                      const Transpose trans,
-                      const bool host=false);
+                      const Transpose trans);
 
   virtual void AllocBuffer(size_t Nbytes);
 };

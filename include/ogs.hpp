@@ -232,12 +232,23 @@ public:
 
   void SetupGlobalToLocalMapping(memory<dlong> GlobalToLocal);
 
-  // host versions
-  void GatherScatter(void* v,
+  // Synchronous host versions
+  template<typename T>
+  void GatherScatter(memory<T> v,
                      const int k,
-                     const Type type,
                      const Op op,
                      const Transpose trans);
+  // Asynchronous host buffer versions
+  template<typename T>
+  void GatherScatterStart (memory<T> v,
+                           const int k,
+                           const Op op,
+                           const Transpose trans);
+  template<typename T>
+  void GatherScatterFinish(memory<T> v,
+                           const int k,
+                           const Op op,
+                           const Transpose trans);
   // Synchronous device buffer versions
   void GatherScatter(occa::memory&  o_v,
                      const int k,
@@ -256,13 +267,26 @@ public:
                            const Op op,
                            const Transpose trans);
 
-  // host versions
-  void Gather(void* gv,
-              const void* v,
+  // Synchronous host versions
+  template<typename T>
+  void Gather(memory<T> gv,
+              const memory<T> v,
               const int k,
-              const Type type,
               const Op op,
               const Transpose trans);
+  // Asynchronous host buffer versions
+  template<typename T>
+  void GatherStart (memory<T> gv,
+                    const memory<T> v,
+                    const int k,
+                    const Op op,
+                    const Transpose trans);
+  template<typename T>
+  void GatherFinish(memory<T> gv,
+                    const memory<T> v,
+                    const int k,
+                    const Op op,
+                    const Transpose trans);
   // Synchronous device buffer versions
   void Gather(occa::memory&  o_gv,
               occa::memory&  o_v,
@@ -284,32 +308,39 @@ public:
                     const Op op,
                     const Transpose trans);
 
-  // host versions
-  void Scatter(void* v,
-               const void* gv,
+  // Synchronous host versions
+  template<typename T>
+  void Scatter(memory<T> v,
+               const memory<T> gv,
                const int k,
-               const Type type,
-               const Op op,
                const Transpose trans);
+  // Asynchronous host buffer versions
+  template<typename T>
+  void ScatterStart (memory<T> v,
+                     const memory<T> gv,
+                     const int k,
+                     const Transpose trans);
+  template<typename T>
+  void ScatterFinish(memory<T> v,
+                     memory<T> gv,
+                     const int k,
+                     const Transpose trans);
   // Synchronous device buffer versions
   void Scatter(occa::memory&  o_v,
                occa::memory&  o_gv,
                const int k,
                const Type type,
-               const Op op,
                const Transpose trans);
   // Asynchronous device buffer versions
   void ScatterStart (occa::memory&  o_v,
                      occa::memory&  o_gv,
                      const int k,
                      const Type type,
-                     const Op op,
                      const Transpose trans);
   void ScatterFinish(occa::memory&  o_v,
                      occa::memory&  o_gv,
                      const int k,
                      const Type type,
-                     const Op op,
                      const Transpose trans);
 
   friend class halo_t;
@@ -333,16 +364,28 @@ public:
 
   void SetupFromGather(ogs_t& ogs);
 
-  // Host version
-  void Exchange(void  *v, const int k, const Type type);
+  // Synchronous Host version
+  template<typename T>
+  void Exchange(memory<T> v, const int k);
+  // Asynchronous host version
+  template<typename T>
+  void ExchangeStart (memory<T> v, const int k);
+  template<typename T>
+  void ExchangeFinish(memory<T> v, const int k);
   // Synchronous device buffer version
   void Exchange(occa::memory &o_v, const int k, const Type type);
   // Asynchronous device buffer version
   void ExchangeStart (occa::memory &o_v, const int k, const Type type);
   void ExchangeFinish(occa::memory &o_v, const int k, const Type type);
 
-  // Host version
-  void Combine(void  *v, const int k, const Type type);
+  // Synchronous Host version
+  template<typename T>
+  void Combine(memory<T> v, const int k);
+  // Asynchronous host version
+  template<typename T>
+  void CombineStart (memory<T> v, const int k);
+  template<typename T>
+  void CombineFinish(memory<T> v, const int k);
   // Synchronous device buffer version
   void Combine(occa::memory &o_v, const int k, const Type type);
   // Asynchronous device buffer version

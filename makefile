@@ -144,10 +144,10 @@ endif
 # rule for .cpp files
 %.o: %.cpp $(DEPS) | libp_libs libgs
 ifneq (,${verbose})
-	$(LIBP_MPICXX) -o $*.o -c $*.cpp $(DAWGS_CXXFLAGS)
+	$(LIBP_CXX) -o $*.o -c $*.cpp $(DAWGS_CXXFLAGS)
 else
 	@printf "%b" "$(OBJ_COLOR)Compiling $(@F)$(NO_COLOR)\n";
-	@$(LIBP_MPICXX) -o $*.o -c $*.cpp $(DAWGS_CXXFLAGS)
+	@$(LIBP_CXX) -o $*.o -c $*.cpp $(DAWGS_CXXFLAGS)
 endif
 
 silentUpdate:

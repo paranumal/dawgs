@@ -85,7 +85,7 @@ LIBCORE_DEFINES=-DLIBP_DIR='"${LIBP_DIR}"'
 LIBOGS_DEFINES=-DOGS_DIR='"${LIBOGS_DIR}"'
 
 #.cpp compilation flags
-LIB_CXXFLAGS=${LIBP_DEFINES} ${LIBP_MPICXXFLAGS} ${INCLUDES}
+LIB_CXXFLAGS=${LIBP_DEFINES} ${LIBP_CXXFLAGS} ${INCLUDES}
 
 #object dependancies
 LIB_DEPS=$(wildcard $(LIBP_INCLUDE_DIR)/*.h)  \
@@ -137,18 +137,18 @@ ${OCCA_DIR}/lib/libocca.so:
 # rule for .cpp files
 core/%.o: core/%.cpp $(LIB_DEPS) ${OCCA_DIR}/lib/libocca.so
 ifneq (,${verbose})
-	$(LIBP_MPICXX) -o $@ -c $< ${LIBCORE_DEFINES} $(LIB_CXXFLAGS)
+	$(LIBP_CXX) -o $@ -c $< ${LIBCORE_DEFINES} $(LIB_CXXFLAGS)
 else
 	@printf "%b" "$(OBJ_COLOR)Compiling $(@F)$(NO_COLOR)\n";
-	@$(LIBP_MPICXX) -o $@ -c $< ${LIBCORE_DEFINES} $(LIB_CXXFLAGS)
+	@$(LIBP_CXX) -o $@ -c $< ${LIBCORE_DEFINES} $(LIB_CXXFLAGS)
 endif
 
 ogs/%.o: ogs/%.cpp $(LIBOGS_DEPS) | libcore.a
 ifneq (,${verbose})
-	$(LIBP_MPICXX) -o $@ -c $< ${LIBOGS_DEFINES} $(LIB_CXXFLAGS)
+	$(LIBP_CXX) -o $@ -c $< ${LIBOGS_DEFINES} $(LIB_CXXFLAGS)
 else
 	@printf "%b" "$(OBJ_COLOR)Compiling $(@F)$(NO_COLOR)\n";
-	@$(LIBP_MPICXX) -o $@ -c $< ${LIBOGS_DEFINES} $(LIB_CXXFLAGS)
+	@$(LIBP_CXX) -o $@ -c $< ${LIBOGS_DEFINES} $(LIB_CXXFLAGS)
 endif
 
 #cleanup

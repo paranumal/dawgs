@@ -33,7 +33,7 @@ namespace libp {
 
 namespace ogs {
 
-static void ExchangeTest(ogsExchange_t* exchange, double time[3], bool host=false) {
+static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   const int Ncold = 10;
   const int Nhot  = 10;
   double start, end;
@@ -43,20 +43,93 @@ static void ExchangeTest(ogsExchange_t* exchange, double time[3], bool host=fals
   MPI_Comm_rank(exchange->comm, &rank);
   MPI_Comm_size(exchange->comm, &size);
 
+  memory<dfloat> buf = exchange->h_workspace;
+  occa::memory o_buf = exchange->o_workspace;
+
+  occa::device &device = exchange->platform.device;
+
   //dry run
   for (int n=0;n<Ncold;++n) {
-    exchange->Start(1, Dfloat, Add, Sym, host);
-    exchange->Finish(1, Dfloat, Add, Sym, host);
+    if (exchange->gpu_aware) {
+      /*GPU-aware exchange*/
+      exchange->Start (o_buf, 1, Dfloat, Add, Sym);
+      exchange->Finish(o_buf, 1, Dfloat, Add, Sym);
+    } else {
+      //if not using gpu-aware mpi move the halo buffer to the host
+      o_buf.copyTo(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+                   0, "async: true");
+      device.finish();
+
+      /*MPI exchange of host buffer*/
+      exchange->Start (buf, 1, Add, Sym);
+      exchange->Finish(buf, 1, Add, Sym);
+
+      // copy recv back to device
+      o_buf.copyFrom(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+                     0, "async: true");
+      device.finish(); //wait for transfer to finish
+    }
   }
 
   //hot runs
-  if (!host) exchange->platform.device.finish();
   start = MPI_Wtime();
   for (int n=0;n<Nhot;++n) {
-    exchange->Start(1, Dfloat, Add, Sym, host);
-    exchange->Finish(1, Dfloat, Add, Sym, host);
+    if (exchange->gpu_aware) {
+      /*GPU-aware exchange*/
+      exchange->Start (o_buf, 1, Dfloat, Add, Sym);
+      exchange->Finish(o_buf, 1, Dfloat, Add, Sym);
+    } else {
+      //if not using gpu-aware mpi move the halo buffer to the host
+      o_buf.copyTo(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+                   0, "async: true");
+      device.finish();
+
+      /*MPI exchange of host buffer*/
+      exchange->Start (buf, 1, Add, Sym);
+      exchange->Finish(buf, 1, Add, Sym);
+
+      // copy recv back to device
+      o_buf.copyFrom(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+                     0, "async: true");
+      device.finish(); //wait for transfer to finish
+    }
   }
-  if (!host) exchange->platform.device.finish();
+  end = MPI_Wtime();
+
+  localTime = (end-start)/Nhot;
+  MPI_Allreduce(&localTime, &sumTime, 1, MPI_DOUBLE, MPI_SUM, exchange->comm);
+  MPI_Allreduce(&localTime, &maxTime, 1, MPI_DOUBLE, MPI_MAX, exchange->comm);
+  MPI_Allreduce(&localTime, &minTime, 1, MPI_DOUBLE, MPI_MIN, exchange->comm);
+
+  time[0] = sumTime/size; //avg
+  time[1] = minTime;      //min
+  time[2] = maxTime;      //max
+}
+
+static void HostExchangeTest(ogsExchange_t* exchange, double time[3]) {
+  const int Ncold = 10;
+  const int Nhot  = 10;
+  double start, end;
+  double localTime, sumTime, minTime, maxTime;
+
+  int rank, size;
+  MPI_Comm_rank(exchange->comm, &rank);
+  MPI_Comm_size(exchange->comm, &size);
+
+  memory<dfloat> buf = exchange->h_workspace;
+
+  //dry run
+  for (int n=0;n<Ncold;++n) {
+    exchange->Start (buf, 1, Add, Sym);
+    exchange->Finish(buf, 1, Add, Sym);
+  }
+
+  //hot runs
+  start = MPI_Wtime();
+  for (int n=0;n<Nhot;++n) {
+    exchange->Start (buf, 1, Add, Sym);
+    exchange->Finish(buf, 1, Add, Sym);
+  }
   end = MPI_Wtime();
 
   localTime = (end-start)/Nhot;
@@ -81,7 +154,8 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
   MPI_Comm_size(comm, &size);
 
   if (size==1) return new ogsPairwise_t(Nshared, sharedNodes,
-                                           _gatherHalo, comm, platform);
+                                        _gatherHalo, dataStream,
+                                        comm, platform);
 
   ogsExchange_t* bestExchange;
   Method method;
@@ -102,13 +176,14 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
    * Pairwise
    ********************************/
   ogsExchange_t* pairwise = new ogsPairwise_t(Nshared, sharedNodes,
-                                           _gatherHalo, comm, platform);
+                                              _gatherHalo, dataStream,
+                                              comm, platform);
 
   //standard copy to host - exchange - copy back to device
   pairwise->gpu_aware=false;
 
   double pairwiseTime[3];
-  ExchangeTest(pairwise, pairwiseTime, false);
+  DeviceExchangeTest(pairwise, pairwiseTime);
   double pairwiseAvg = pairwiseTime[0];
 
 #ifdef GPU_AWARE_MPI
@@ -116,7 +191,7 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
   pairwise->gpu_aware=true;
 
   double pairwiseGATime[3];
-  ExchangeTest(pairwise, pairwiseGATime, false);
+  DeviceExchangeTest(pairwise, pairwiseGATime);
 
   if (pairwiseGATime[0] < pairwiseAvg)
     pairwiseAvg = pairwiseGATime[0];
@@ -127,7 +202,7 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
 
   //test exchange from host memory (just for reporting)
   double pairwiseHostTime[3];
-  ExchangeTest(pairwise, pairwiseHostTime, true);
+  HostExchangeTest(pairwise, pairwiseHostTime);
 
   bestExchange = pairwise;
   method = Pairwise;
@@ -150,13 +225,14 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
    * All-to-All
    ********************************/
   ogsExchange_t* alltoall = new ogsAllToAll_t(Nshared, sharedNodes,
-                                           _gatherHalo, comm, platform);
+                                           _gatherHalo, dataStream,
+                                           comm, platform);
 
   //standard copy to host - exchange - copy back to device
   alltoall->gpu_aware=false;
 
   double alltoallTime[3];
-  ExchangeTest(alltoall, alltoallTime, false);
+  DeviceExchangeTest(alltoall, alltoallTime);
   double alltoallAvg = alltoallTime[0];
 
 #ifdef GPU_AWARE_MPI
@@ -164,7 +240,7 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
   alltoall->gpu_aware=true;
 
   double alltoallGATime[3];
-  ExchangeTest(alltoall, alltoallGATime, false);
+  DeviceExchangeTest(alltoall, alltoallGATime);
 
   if (alltoallGATime[0] < alltoallAvg)
     alltoallAvg = alltoallGATime[0];
@@ -175,7 +251,7 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
 
   //test exchange from host memory (just for reporting)
   double alltoallHostTime[3];
-  ExchangeTest(alltoall, alltoallHostTime, true);
+  HostExchangeTest(alltoall, alltoallHostTime);
 
   if (alltoallAvg < bestTime) {
     delete bestExchange;
@@ -203,13 +279,14 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
    * Crystal Router
    ********************************/
   ogsExchange_t* crystal = new ogsAllToAll_t(Nshared, sharedNodes,
-                                           _gatherHalo, comm, platform);
+                                           _gatherHalo, dataStream,
+                                           comm, platform);
 
   //standard copy to host - exchange - copy back to device
   crystal->gpu_aware=false;
 
   double crystalTime[3];
-  ExchangeTest(crystal, crystalTime, false);
+  DeviceExchangeTest(crystal, crystalTime);
   double crystalAvg = crystalTime[0];
 
 #ifdef GPU_AWARE_MPI
@@ -217,7 +294,7 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
   crystal->gpu_aware=true;
 
   double crystalGATime[3];
-  ExchangeTest(crystal, crystalGATime, false);
+  DeviceExchangeTest(crystal, crystalGATime);
 
   if (crystalGATime[0] < crystalAvg)
     crystalAvg = crystalGATime[0];
@@ -228,7 +305,7 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
 
   //test exchange from host memory (just for reporting)
   double crystalHostTime[3];
-  ExchangeTest(crystal, crystalHostTime, true);
+  HostExchangeTest(crystal, crystalHostTime);
 
   if (crystalAvg < bestTime) {
     delete bestExchange;

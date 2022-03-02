@@ -1123,9 +1123,11 @@ static void auto_setup(struct gs_remote *r, struct gs_topology *top,
     } while(0)
 #endif
 
-    // #define DRY_RUN(i,gsr,str) do { \
-    //   dry_run_time(time[i],gsr,comm,buf); \
-    // } while(0)
+#if 0
+    #define DRY_RUN(i,gsr,str) do { \
+     dry_run_time(time[i],gsr,comm,buf); \
+    } while(0)
+#endif
 
     #define DRY_RUN_CHECK(str,new_name) do { \
       DRY_RUN(1,&r_alt,str); \
