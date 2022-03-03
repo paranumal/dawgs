@@ -35,6 +35,7 @@ SOFTWARE.
 #include <cmath>
 #include "utils.hpp"
 #include "memory.hpp"
+#include "comm.hpp"
 
 namespace libp {
 

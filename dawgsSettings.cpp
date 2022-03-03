@@ -27,7 +27,7 @@ SOFTWARE.
 #include "dawgs.hpp"
 
 //settings for dawgs test
-dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
+dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, comm_t _comm):
   settings_t(_comm) {
 
   newSetting("-m", "--mode",
@@ -107,18 +107,14 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, MPI_Comm &_comm):
 
 void dawgsSettings_t::report() {
 
-  int rank, size;
-  MPI_Comm_rank(comm, &rank);
-  MPI_Comm_size(comm, &size);
-
-  if (rank==0) {
+  if (comm.rank()==0) {
     std::cout << "Settings:\n\n";
     reportSetting("THREAD MODEL");
 
     if (compareSetting("THREAD MODEL","OpenCL"))
       reportSetting("PLATFORM NUMBER");
 
-    if ((size==1)
+    if ((comm.size()==1)
       &&(compareSetting("THREAD MODEL","CUDA")
           ||compareSetting("THREAD MODEL","HIP")
           ||compareSetting("THREAD MODEL","OpenCL") ))

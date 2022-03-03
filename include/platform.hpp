@@ -68,7 +68,7 @@ public:
 
     iplatform = std::make_shared<internal::iplatform_t>(settings);
 
-    comm = settings.comm;
+    comm = settings.comm.comm();
 
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);

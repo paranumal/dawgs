@@ -354,106 +354,108 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 int main(int argc, char **argv){
 
   // start up MPI
-  MPI_Init(&argc, &argv);
+  comm_t::Init(argc, argv);
 
-  MPI_Comm comm = MPI_COMM_WORLD;
+  {
+    comm_t comm(comm_t::world().Dup());
 
-  //parse run settings from cmd line
-  dawgsSettings_t settings(argc, argv, comm);
+    //parse run settings from cmd line
+    dawgsSettings_t settings(argc, argv, comm);
 
-  // set up platform (wraps OCCA device)
-  platform_t platform(settings);
+    // set up platform (wraps OCCA device)
+    platform_t platform(settings);
 
-  //Trigger JIT kernel builds
-  ogs::InitializeKernels(platform, ogs::Dfloat, ogs::Add);
+    //Trigger JIT kernel builds
+    ogs::InitializeKernels(platform, ogs::Dfloat, ogs::Add);
 
-  /*************************
-   * Setup
-   *************************/
-  //number of MPI ranks
-  int size = platform.size;
-  //global MPI rank
-  int rank = platform.rank;
+    /*************************
+     * Setup
+     *************************/
+    //number of MPI ranks
+    int size = platform.size;
+    //global MPI rank
+    int rank = platform.rank;
 
-  // find a factorization size = size_x*size_y*size_z such that
-  //  size_x>=size_y>=size_z are all 'close' to one another
-  int size_x, size_y, size_z;
-  Factor3(size, size_x, size_y, size_z);
+    // find a factorization size = size_x*size_y*size_z such that
+    //  size_x>=size_y>=size_z are all 'close' to one another
+    int size_x, size_y, size_z;
+    Factor3(size, size_x, size_y, size_z);
 
-  //determine (x,y,z) rank coordinates for this processes
-  int rank_x=-1, rank_y=-1, rank_z=-1;
-  RankDecomp3(size_x, size_y, size_z,
-              rank_x, rank_y, rank_z,
-              rank);
+    //determine (x,y,z) rank coordinates for this processes
+    int rank_x=-1, rank_y=-1, rank_z=-1;
+    RankDecomp3(size_x, size_y, size_z,
+                rank_x, rank_y, rank_z,
+                rank);
 
-  //number of cubes in each dimension
-  dlong NX, NY, NZ; //global
-  dlong nx, ny, nz; //local
+    //number of cubes in each dimension
+    dlong NX, NY, NZ; //global
+    dlong nx, ny, nz; //local
 
-  bool sweep;
-  sweep = settings.compareSetting("SWEEP", "TRUE");
+    bool sweep;
+    sweep = settings.compareSetting("SWEEP", "TRUE");
 
-  if (!sweep) {
-    //get polynomial degree
-    int N;
-    settings.getSetting("POLYNOMIAL DEGREE", N);
+    if (!sweep) {
+      //get polynomial degree
+      int N;
+      settings.getSetting("POLYNOMIAL DEGREE", N);
 
-    //get global size from settings
-    settings.getSetting("BOX NX", NX);
-    settings.getSetting("BOX NY", NY);
-    settings.getSetting("BOX NZ", NZ);
+      //get global size from settings
+      settings.getSetting("BOX NX", NX);
+      settings.getSetting("BOX NY", NY);
+      settings.getSetting("BOX NZ", NZ);
 
-    //get local size from settings
-    settings.getSetting("LOCAL BOX NX", nx);
-    settings.getSetting("LOCAL BOX NY", ny);
-    settings.getSetting("LOCAL BOX NZ", nz);
+      //get local size from settings
+      settings.getSetting("LOCAL BOX NX", nx);
+      settings.getSetting("LOCAL BOX NY", ny);
+      settings.getSetting("LOCAL BOX NZ", nz);
 
-    if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
-      //set global size by multiplying local size by grid dims
-      NX = nx * size_x;
-      NY = ny * size_y;
-      NZ = nz * size_z;
-      settings.changeSetting("BOX NX", std::to_string(NX));
-      settings.changeSetting("BOX NY", std::to_string(NY));
-      settings.changeSetting("BOX NZ", std::to_string(NZ));
-    } else {
-      //WARNING setting global sizes on input overrides any local sizes provided
-      nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
-      ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
-      nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
-    }
-
-    Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
-  } else {
-    //sweep through lots of tests
-    std::vector<int> NN_low {  2,  2,  2,  2,  2,  2,  2,  2};
-    std::vector<int> NN_high{122,102, 82, 62, 54, 38, 28, 28};
-    std::vector<int> NN_step{  8,  4,  4,  4,  4,  2,  2,  2};
-
-    for (int N=1;N<9;N++) {
-
-      const int low  = NN_low[N-1];
-      const int high = NN_high[N-1];
-      const int step = NN_step[N-1];
-
-      for (int NN=low;NN<=high;NN+=step) {
-        nx = NN;
-        ny = NN;
-        nz = NN;
+      if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
+        //set global size by multiplying local size by grid dims
         NX = nx * size_x;
         NY = ny * size_y;
         NZ = nz * size_z;
         settings.changeSetting("BOX NX", std::to_string(NX));
         settings.changeSetting("BOX NY", std::to_string(NY));
         settings.changeSetting("BOX NZ", std::to_string(NZ));
+      } else {
+        //WARNING setting global sizes on input overrides any local sizes provided
+        nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
+        ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
+        nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
+      }
 
-        Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
+      Test(platform, comm.comm(), settings, nx, ny, nz, NX, NY, NZ, N);
+    } else {
+      //sweep through lots of tests
+      std::vector<int> NN_low {  2,  2,  2,  2,  2,  2,  2,  2};
+      std::vector<int> NN_high{122,102, 82, 62, 54, 38, 28, 28};
+      std::vector<int> NN_step{  8,  4,  4,  4,  4,  2,  2,  2};
+
+      for (int N=1;N<9;N++) {
+
+        const int low  = NN_low[N-1];
+        const int high = NN_high[N-1];
+        const int step = NN_step[N-1];
+
+        for (int NN=low;NN<=high;NN+=step) {
+          nx = NN;
+          ny = NN;
+          nz = NN;
+          NX = nx * size_x;
+          NY = ny * size_y;
+          NZ = nz * size_z;
+          settings.changeSetting("BOX NX", std::to_string(NX));
+          settings.changeSetting("BOX NY", std::to_string(NY));
+          settings.changeSetting("BOX NZ", std::to_string(NZ));
+
+          Test(platform, comm.comm(), settings, nx, ny, nz, NX, NY, NZ, N);
+        }
       }
     }
   }
 
   // close down MPI
-  MPI_Finalize();
+  comm_t::Finalize();
   return LIBP_SUCCESS;
 }
 

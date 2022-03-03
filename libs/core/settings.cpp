@@ -105,7 +105,7 @@ std::ostream& operator<<(std::ostream& os, const setting_t& setting) {
   return os;
 }
 
-settings_t::settings_t(MPI_Comm _comm):
+settings_t::settings_t(comm_t _comm):
   comm(_comm) {}
 
 void settings_t::newSetting(const string shortkey, const string longkey,

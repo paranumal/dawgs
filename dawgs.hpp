@@ -37,7 +37,7 @@ using namespace libp;
 
 class dawgsSettings_t: public settings_t {
 public:
-  dawgsSettings_t(const int argc, char** argv, MPI_Comm& _comm);
+  dawgsSettings_t(const int argc, char** argv, comm_t _comm);
   void report();
 };
 
