@@ -72,6 +72,24 @@ template<> struct mpiType<long long int> {
   static constexpr MPI_Datatype get() { return MPI_LONG_LONG_INT; }
 };
 
+template<typename T>
+struct ogsType {
+  static constexpr Type get();
+};
+
+template<> struct ogsType<float> {
+  static constexpr Type get() { return Float; }
+};
+template<> struct ogsType<double> {
+  static constexpr Type get() { return Double; }
+};
+template<> struct ogsType<int> {
+  static constexpr Type get() { return Int32; }
+};
+template<> struct ogsType<long long int> {
+  static constexpr Type get() { return Int64; }
+};
+
 //permute an array A, according to the ordering returned by P
 // i.e. for all n, A[P(n)] <- A[n]
 template<typename T, class Order>

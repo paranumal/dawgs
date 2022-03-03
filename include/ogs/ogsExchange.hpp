@@ -43,8 +43,8 @@ public:
 
   dlong Nhalo, NhaloP;
 
-  memory<std::byte> h_workspace, h_sendspace;
-  occa::memory o_workspace, o_sendspace;
+  pinnedMemory<char> h_workspace, h_sendspace;
+  deviceMemory<char> o_workspace, o_sendspace;
 
   occa::stream dataStream;
   static occa::kernel extractKernel[4];
@@ -65,25 +65,23 @@ public:
   }
   virtual ~ogsExchange_t() {}
 
-  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans)=0;
-  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
 
-  virtual void Start(occa::memory &o_buf,
-                     const int k,
-                     const Type type,
-                     const Op op,
-                     const Transpose trans)=0;
-  virtual void Finish(occa::memory &o_buf,
-                      const int k,
-                      const Type type,
-                      const Op op,
-                      const Transpose trans)=0;
+  virtual void Start(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Start(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans)=0;
+  virtual void Finish(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans)=0;
 
   virtual void AllocBuffer(size_t Nbytes)=0;
 
@@ -96,7 +94,7 @@ private:
 
   dlong NsendN=0, NsendT=0;
   memory<dlong> sendIdsN, sendIdsT;
-  occa::memory o_sendIdsN, o_sendIdsT;
+  deviceMemory<dlong> o_sendIdsN, o_sendIdsT;
 
   ogsOperator_t postmpi;
 
@@ -125,36 +123,46 @@ public:
                platform_t &_platform);
 
   template<typename T>
-  void Start(memory<T> &buf,
+  void Start(pinnedMemory<T> &buf,
                 const int k,
                 const Op op,
                 const Transpose trans);
 
   template<typename T>
-  void Finish(memory<T> &buf,
+  void Finish(pinnedMemory<T> &buf,
                 const int k,
                 const Op op,
                 const Transpose trans);
 
-  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
 
-  virtual void Start(occa::memory &o_buf,
-                     const int k,
-                     const Type type,
-                     const Op op,
-                     const Transpose trans);
-  virtual void Finish(occa::memory &o_buf,
-                      const int k,
-                      const Type type,
-                      const Op op,
-                      const Transpose trans);
+  template<typename T>
+  void Start(deviceMemory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  template<typename T>
+  void Finish(deviceMemory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  virtual void Start(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
 
   virtual void AllocBuffer(size_t Nbytes);
 
@@ -166,7 +174,7 @@ private:
 
   dlong NsendN=0, NsendT=0;
   memory<dlong> sendIdsN, sendIdsT;
-  occa::memory o_sendIdsN, o_sendIdsT;
+  deviceMemory<dlong> o_sendIdsN, o_sendIdsT;
 
   ogsOperator_t postmpi;
 
@@ -196,36 +204,46 @@ public:
                platform_t &_platform);
 
   template<typename T>
-  void Start(memory<T> &buf,
+  void Start(pinnedMemory<T> &buf,
                 const int k,
                 const Op op,
                 const Transpose trans);
 
   template<typename T>
-  void Finish(memory<T> &buf,
+  void Finish(pinnedMemory<T> &buf,
                 const int k,
                 const Op op,
                 const Transpose trans);
 
-  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
 
-  virtual void Start(occa::memory &o_buf,
-                     const int k,
-                     const Type type,
-                     const Op op,
-                     const Transpose trans);
-  virtual void Finish(occa::memory &o_buf,
-                      const int k,
-                      const Type type,
-                      const Op op,
-                      const Transpose trans);
+  template<typename T>
+  void Start(deviceMemory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  template<typename T>
+  void Finish(deviceMemory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  virtual void Start(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
 
   virtual void AllocBuffer(size_t Nbytes);
 };
@@ -242,14 +260,14 @@ private:
     dlong recvOffset;
 
     memory<dlong> sendIds;
-    occa::memory o_sendIds;
+    deviceMemory<dlong> o_sendIds;
 
     ogsOperator_t gather;
   };
 
   int buf_id=0, hbuf_id=0;
-  occa::memory o_work[2];
-  memory<std::byte> h_work[2];
+  pinnedMemory<char> h_work[2];
+  deviceMemory<char> o_work[2];
 
   MPI_Request request[3];
   MPI_Status status[3];
@@ -269,36 +287,46 @@ public:
                    platform_t &_platform);
 
   template<typename T>
-  void Start(memory<T> &buf,
+  void Start(pinnedMemory<T> &buf,
                 const int k,
                 const Op op,
                 const Transpose trans);
 
   template<typename T>
-  void Finish(memory<T> &buf,
+  void Finish(pinnedMemory<T> &buf,
                 const int k,
                 const Op op,
                 const Transpose trans);
 
-  virtual void Start(memory<float> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<double> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Start(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<float> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<double> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<int> &buf,const int k,const Op op,const Transpose trans);
-  virtual void Finish(memory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(pinnedMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
 
-  virtual void Start(occa::memory &o_buf,
-                     const int k,
-                     const Type type,
-                     const Op op,
-                     const Transpose trans);
-  virtual void Finish(occa::memory &o_buf,
-                      const int k,
-                      const Type type,
-                      const Op op,
-                      const Transpose trans);
+  template<typename T>
+  void Start(deviceMemory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  template<typename T>
+  void Finish(deviceMemory<T> &buf,
+                const int k,
+                const Op op,
+                const Transpose trans);
+
+  virtual void Start(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Start(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<float> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<double> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<int> &buf,const int k,const Op op,const Transpose trans);
+  virtual void Finish(deviceMemory<long long int> &buf,const int k,const Op op,const Transpose trans);
 
   virtual void AllocBuffer(size_t Nbytes);
 };

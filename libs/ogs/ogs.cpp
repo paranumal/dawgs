@@ -36,36 +36,36 @@ namespace ogs {
 /********************************
  * Device GatherScatter
  ********************************/
-void ogs_t::GatherScatter(occa::memory&  o_v,
+template<typename T>
+void ogs_t::GatherScatter(deviceMemory<T> o_v,
                           const int k,
-                          const Type type,
                           const Op op,
                           const Transpose trans){
-  GatherScatterStart (o_v, k, type, op, trans);
-  GatherScatterFinish(o_v, k, type, op, trans);
+  GatherScatterStart (o_v, k, op, trans);
+  GatherScatterFinish(o_v, k, op, trans);
 }
 
-void ogs_t::GatherScatterStart(occa::memory& o_v,
+template<typename T>
+void ogs_t::GatherScatterStart(deviceMemory<T> o_v,
                                const int k,
-                               const Type type,
                                const Op op,
                                const Transpose trans){
-  exchange->AllocBuffer(k*Sizeof(type));
+  exchange->AllocBuffer(k*sizeof(T));
 
-  occa::memory o_haloBuf = exchange->o_workspace;
+  deviceMemory<T> o_haloBuf = exchange->o_workspace;
 
   //collect halo buffer
-  gatherHalo->Gather(o_haloBuf, o_v, k, type, op, trans);
+  gatherHalo->Gather(o_haloBuf, o_v, k, op, trans);
 
   if (exchange->gpu_aware) {
     //prepare MPI exchange
-    exchange->Start(o_haloBuf, k, type, op, trans);
+    exchange->Start(o_haloBuf, k, op, trans);
   } else {
     //get current stream
     occa::device &device = platform.device;
     occa::stream currentStream = device.getStream();
 
-    memory<dfloat> haloBuf = exchange->h_workspace;
+    pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //if not using gpu-aware mpi move the halo buffer to the host
     const dlong Nhalo = (trans == NoTrans) ? NhaloP : NhaloT;
@@ -75,29 +75,28 @@ void ogs_t::GatherScatterStart(occa::memory& o_v,
 
     //queue copy to host
     device.setStream(dataStream);
-    const size_t Nbytes = k*Sizeof(type);
-    o_haloBuf.copyTo(haloBuf.ptr(), Nhalo*Nbytes,
+    haloBuf.copyFrom(o_haloBuf, Nhalo*k,
                      0, "async: true");
     device.setStream(currentStream);
   }
 }
 
-void ogs_t::GatherScatterFinish(occa::memory& o_v,
+template<typename T>
+void ogs_t::GatherScatterFinish(deviceMemory<T> o_v,
                                 const int k,
-                                const Type type,
                                 const Op op,
                                 const Transpose trans){
 
   //queue local gs operation
-  gatherLocal->GatherScatter(o_v, k, type, op, trans);
+  gatherLocal->GatherScatter(o_v, k, op, trans);
 
-  occa::memory o_haloBuf = exchange->o_workspace;
+  deviceMemory<T> o_haloBuf = exchange->o_workspace;
 
   if (exchange->gpu_aware) {
     //finish MPI exchange
-    exchange->Finish(o_haloBuf, k, type, op, trans);
+    exchange->Finish(o_haloBuf, k, op, trans);
   } else {
-    memory<dfloat> haloBuf = exchange->h_workspace;
+    pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //get current stream
     occa::device &device = platform.device;
@@ -113,16 +112,28 @@ void ogs_t::GatherScatterFinish(occa::memory& o_v,
 
     // copy recv back to device
     const dlong Nhalo = (trans == Trans) ? NhaloP : NhaloT;
-    const size_t Nbytes = k*Sizeof(type);
-    o_haloBuf.copyFrom(haloBuf.ptr(), Nhalo*Nbytes,
-                       0, "async: true");
+    haloBuf.copyTo(o_haloBuf, Nhalo*k,
+                   0, "async: true");
     device.finish(); //wait for transfer to finish
     device.setStream(currentStream);
   }
 
   //write exchanged halo buffer back to vector
-  gatherHalo->Scatter(o_v, o_haloBuf, k, type, trans);
+  gatherHalo->Scatter(o_v, o_haloBuf, k, trans);
 }
+
+template
+void ogs_t::GatherScatter(deviceMemory<float> v, const int k,
+                          const Op op, const Transpose trans);
+template
+void ogs_t::GatherScatter(deviceMemory<double> v, const int k,
+                          const Op op, const Transpose trans);
+template
+void ogs_t::GatherScatter(deviceMemory<int> v, const int k,
+                          const Op op, const Transpose trans);
+template
+void ogs_t::GatherScatter(deviceMemory<long long int> v, const int k,
+                          const Op op, const Transpose trans);
 
 /********************************
  * Host GatherScatter
@@ -144,7 +155,7 @@ void ogs_t::GatherScatterStart(memory<T> v,
   exchange->AllocBuffer(k*sizeof(T));
 
   /*Cast workspace to type T*/
-  memory<T> haloBuf = exchange->h_workspace;
+  pinnedMemory<T> haloBuf = exchange->h_workspace;
 
   //collect halo buffer
   gatherHalo->Gather(haloBuf, v, k, op, trans);
@@ -160,7 +171,7 @@ void ogs_t::GatherScatterFinish(memory<T> v,
                                 const Transpose trans){
 
   /*Cast workspace to type T*/
-  memory<T> haloBuf = exchange->h_workspace;
+  pinnedMemory<T> haloBuf = exchange->h_workspace;
 
   //queue local gs operation
   gatherLocal->GatherScatter(v, k, op, trans);
@@ -188,84 +199,81 @@ void ogs_t::GatherScatter(memory<long long int> v, const int k,
 /********************************
  * Device Gather
  ********************************/
-void ogs_t::Gather(occa::memory&  o_gv,
-                   occa::memory&  o_v,
+template<typename T>
+void ogs_t::Gather(deviceMemory<T> o_gv,
+                   deviceMemory<T> o_v,
                    const int k,
-                   const Type type,
                    const Op op,
                    const Transpose trans){
-  GatherStart (o_gv, o_v, k, type, op, trans);
-  GatherFinish(o_gv, o_v, k, type, op, trans);
+  GatherStart (o_gv, o_v, k, op, trans);
+  GatherFinish(o_gv, o_v, k, op, trans);
 }
 
-void ogs_t::GatherStart(occa::memory&  o_gv,
-                        occa::memory&  o_v,
+template<typename T>
+void ogs_t::GatherStart(deviceMemory<T> o_gv,
+                        deviceMemory<T> o_v,
                         const int k,
-                        const Type type,
                         const Op op,
                         const Transpose trans){
   AssertGatherDefined();
 
-  occa::memory o_haloBuf = exchange->o_workspace;
+  deviceMemory<T> o_haloBuf = exchange->o_workspace;
 
   if (trans==Trans) { //if trans!=ogs::Trans theres no comms required
-    exchange->AllocBuffer(k*Sizeof(type));
+    exchange->AllocBuffer(k*sizeof(T));
 
     //collect halo buffer
-    gatherHalo->Gather(o_haloBuf, o_v, k, type, op, Trans);
+    gatherHalo->Gather(o_haloBuf, o_v, k, op, Trans);
 
     if (exchange->gpu_aware) {
       //prepare MPI exchange
-      exchange->Start(o_haloBuf, k, type, op, Trans);
+      exchange->Start(o_haloBuf, k, op, Trans);
     } else {
       //get current stream
       occa::device &device = platform.device;
       occa::stream currentStream = device.getStream();
 
       //if not using gpu-aware mpi move the halo buffer to the host
-      memory<dfloat> haloBuf = exchange->h_workspace;
+      pinnedMemory<T> haloBuf = exchange->h_workspace;
 
       //wait for o_haloBuf to be ready
       device.finish();
 
       //queue copy to host
       device.setStream(dataStream);
-      const size_t Nbytes = k*Sizeof(type);
-      o_haloBuf.copyTo(haloBuf.ptr(), NhaloT*Nbytes,
+      haloBuf.copyFrom(o_haloBuf, NhaloT*k,
                        0, "async: true");
       device.setStream(currentStream);
     }
   } else {
     //gather halo
-    occa::memory o_gvHalo = o_gv + k*NlocalT*Sizeof(type);
-    gatherHalo->Gather(o_gvHalo, o_v, k, type, op, trans);
+    gatherHalo->Gather(o_gv + k*NlocalT, o_v, k, op, trans);
   }
 }
 
-void ogs_t::GatherFinish(occa::memory&  o_gv,
-                         occa::memory&  o_v,
+template<typename T>
+void ogs_t::GatherFinish(deviceMemory<T> o_gv,
+                         deviceMemory<T> o_v,
                          const int k,
-                         const Type type,
                          const Op op,
                          const Transpose trans){
   AssertGatherDefined();
 
-  occa::memory o_haloBuf = exchange->o_workspace;
+  deviceMemory<T> o_haloBuf = exchange->o_workspace;
 
   //queue local g operation
-  gatherLocal->Gather(o_gv, o_v, k, type, op, trans);
+  gatherLocal->Gather(o_gv, o_v, k, op, trans);
 
   if (trans==Trans) { //if trans!=ogs::Trans theres no comms required
     if (exchange->gpu_aware) {
       //finish MPI exchange
-      exchange->Finish(o_haloBuf, k, type, op, Trans);
+      exchange->Finish(o_haloBuf, k, op, Trans);
 
       //put the result at the end of o_gv
-      o_haloBuf.copyTo(o_gv + k*NlocalT*Sizeof(type),
-                       k*NhaloP*Sizeof(type),
-                       0, 0, "async: true");
+      o_haloBuf.copyTo(o_gv + k*NlocalT,
+                       k*NhaloP, 0, "async: true");
     } else {
-      memory<dfloat> haloBuf = exchange->h_workspace;
+      pinnedMemory<T> haloBuf = exchange->h_workspace;
 
       //get current stream
       occa::device &device = platform.device;
@@ -281,14 +289,26 @@ void ogs_t::GatherFinish(occa::memory&  o_gv,
 
       // copy recv back to device
       //put the result at the end of o_gv
-      o_gv.copyFrom(haloBuf.ptr(), k*NhaloP*Sizeof(type),
-                    k*NlocalT*Sizeof(type), "async: true");
-
+      haloBuf.copyTo(o_gv + k*NlocalT, k*NhaloP,
+                     0, "async: true");
       device.finish(); //wait for transfer to finish
       device.setStream(currentStream);
     }
   }
 }
+
+template
+void ogs_t::Gather(deviceMemory<float> v, const deviceMemory<float> gv,
+                   const int k, const Op op, const Transpose trans);
+template
+void ogs_t::Gather(deviceMemory<double> v, const deviceMemory<double> gv,
+                   const int k, const Op op, const Transpose trans);
+template
+void ogs_t::Gather(deviceMemory<int> v, const deviceMemory<int> gv,
+                   const int k, const Op op, const Transpose trans);
+template
+void ogs_t::Gather(deviceMemory<long long int> v, const deviceMemory<long long int> gv,
+                   const int k, const Op op, const Transpose trans);
 
 /********************************
  * Host Gather
@@ -317,7 +337,7 @@ void ogs_t::GatherStart(memory<T> gv,
     exchange->AllocBuffer(k*sizeof(T));
 
     /*Cast workspace to type T*/
-    memory<T> haloBuf = exchange->h_workspace;
+    pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //collect halo buffer
     gatherHalo->Gather(haloBuf, v, k, op, Trans);
@@ -343,7 +363,7 @@ void ogs_t::GatherFinish(memory<T> gv,
 
   if (trans==Trans) { //if trans!=ogs::Trans theres no comms required
     /*Cast workspace to type T*/
-    memory<T> haloBuf = exchange->h_workspace;
+    pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //finish MPI exchange
     exchange->Finish(haloBuf, k, op, Trans);
@@ -369,79 +389,76 @@ void ogs_t::Gather(memory<long long int> v, const memory<long long int> gv,
 /********************************
  * Device Scatter
  ********************************/
-void ogs_t::Scatter(occa::memory&  o_v,
-                    occa::memory&  o_gv,
+template<typename T>
+void ogs_t::Scatter(deviceMemory<T> o_v,
+                    deviceMemory<T> o_gv,
                     const int k,
-                    const Type type,
                     const Transpose trans){
-  ScatterStart (o_v, o_gv, k, type, trans);
-  ScatterFinish(o_v, o_gv, k, type, trans);
+  ScatterStart (o_v, o_gv, k, trans);
+  ScatterFinish(o_v, o_gv, k, trans);
 }
 
-void ogs_t::ScatterStart(occa::memory&  o_v,
-                         occa::memory&  o_gv,
+template<typename T>
+void ogs_t::ScatterStart(deviceMemory<T> o_v,
+                         deviceMemory<T> o_gv,
                          const int k,
-                         const Type type,
                          const Transpose trans){
   AssertGatherDefined();
 
-  occa::memory o_haloBuf = exchange->o_workspace;
+  deviceMemory<T> o_haloBuf = exchange->o_workspace;
 
   if (trans==NoTrans) { //if trans!=ogs::NoTrans theres no comms required
-    exchange->AllocBuffer(k*Sizeof(type));
+    exchange->AllocBuffer(k*sizeof(T));
 
     occa::device &device = platform.device;
 
     if (exchange->gpu_aware) {
       //collect halo buffer
-      o_haloBuf.copyFrom(o_gv + k*NlocalT*Sizeof(type),
-                         k*NhaloP*Sizeof(type),
-                         0, 0, "async: true");
+      o_haloBuf.copyFrom(o_gv + k*NlocalT,
+                         k*NhaloP, 0, "async: true");
 
       //wait for o_haloBuf to be ready
       device.finish();
 
       //prepare MPI exchange
-      exchange->Start(o_haloBuf, k, type, Add, NoTrans);
+      exchange->Start(o_haloBuf, k, Add, NoTrans);
     } else {
       //get current stream
       occa::stream currentStream = device.getStream();
 
       //if not using gpu-aware mpi move the halo buffer to the host
-      memory<dfloat> haloBuf = exchange->h_workspace;
+      pinnedMemory<T> haloBuf = exchange->h_workspace;
 
       //wait for o_gv to be ready
       device.finish();
 
       //queue copy to host
       device.setStream(dataStream);
-      const size_t Nbytes = k*Sizeof(type);
-      o_gv.copyTo(haloBuf.ptr(), NhaloP*Nbytes,
-                  k*NlocalT*Sizeof(type), "async: true");
+      haloBuf.copyFrom(o_gv + k*NlocalT, NhaloP*k,
+                       0, "async: true");
       device.setStream(currentStream);
     }
   }
 }
 
-
-void ogs_t::ScatterFinish(occa::memory&  o_v,
-                          occa::memory&  o_gv,
+template<typename T>
+void ogs_t::ScatterFinish(deviceMemory<T> o_v,
+                          deviceMemory<T> o_gv,
                           const int k,
-                          const Type type,
                           const Transpose trans){
   AssertGatherDefined();
 
-  occa::memory o_haloBuf = exchange->o_workspace;
+  deviceMemory<T> o_haloBuf = exchange->o_workspace;
 
   //queue local s operation
-  gatherLocal->Scatter(o_v, o_gv, k, type, trans);
+  gatherLocal->Scatter(o_v, o_gv, k, trans);
 
   if (trans==NoTrans) { //if trans!=ogs::NoTrans theres no comms required
     if (exchange->gpu_aware) {
       //finish MPI exchange
-      exchange->Finish(o_haloBuf, k, type, Add, NoTrans);
+      exchange->Finish(o_haloBuf, k, Add, NoTrans);
     } else {
-      memory<dfloat> haloBuf = exchange->h_workspace;
+      pinnedMemory<T> haloBuf = exchange->h_workspace;
 
       //get current stream
       occa::device &device = platform.device;
@@ -456,21 +473,32 @@ void ogs_t::ScatterFinish(occa::memory&  o_v,
       exchange->Finish(haloBuf, k, Add, NoTrans);
 
       // copy recv back to device
-      const size_t Nbytes = k*Sizeof(type);
-      o_haloBuf.copyFrom(haloBuf.ptr(), NhaloT*Nbytes,
-                         0, "async: true");
+      haloBuf.copyTo(o_haloBuf, NhaloT*k,
+                     0, "async: true");
       device.finish(); //wait for transfer to finish
       device.setStream(currentStream);
     }
 
     //scatter halo buffer
-    gatherHalo->Scatter(o_v, o_haloBuf, k, type, NoTrans);
+    gatherHalo->Scatter(o_v, o_haloBuf, k, NoTrans);
   } else {
     //scatter halo
-    occa::memory o_gvHalo = o_gv + k*NlocalT*Sizeof(type);
-    gatherHalo->Scatter(o_v, o_gvHalo, k, type, trans);
+    gatherHalo->Scatter(o_v, o_gv + k*NlocalT, k, trans);
   }
 }
+
+template
+void ogs_t::Scatter(deviceMemory<float> v, const deviceMemory<float> gv,
+                    const int k, const Transpose trans);
+template
+void ogs_t::Scatter(deviceMemory<double> v, const deviceMemory<double> gv,
+                    const int k, const Transpose trans);
+template
+void ogs_t::Scatter(deviceMemory<int> v, const deviceMemory<int> gv,
+                    const int k, const Transpose trans);
+template
+void ogs_t::Scatter(deviceMemory<long long int> v, const deviceMemory<long long int> gv,
+                    const int k, const Transpose trans);
 
 /********************************
  * Host Scatter
@@ -497,7 +525,7 @@ void ogs_t::ScatterStart(memory<T> v,
     exchange->AllocBuffer(k*sizeof(T));
 
     /*Cast workspace to type T*/
-    memory<T> haloBuf = exchange->h_workspace;
+    pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //collect halo buffer
     haloBuf.copyFrom(gv + k*NlocalT, k*NhaloP);
@@ -519,7 +547,7 @@ void ogs_t::ScatterFinish(memory<T> v,
 
   if (trans==NoTrans) { //if trans!=ogs::NoTrans theres no comms required
     /*Cast workspace to type T*/
-    memory<T> haloBuf = exchange->h_workspace;
+    pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //finish MPI exchange (and put the result at the end of o_gv)
     exchange->Finish(haloBuf, k, Add, NoTrans);

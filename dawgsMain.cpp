@@ -212,7 +212,7 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   for (dlong n=0;n<K*Nelements*Np;n++) q[n]=distrib(RNG);
 
   //make a device array o_q, copying q from host on creation
-  occa::memory o_q = platform.malloc(K*Nelements*Np, q);
+  deviceMemory<dfloat> o_q = platform.malloc<dfloat>(K*Nelements*Np, q);
 
 
   // if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
@@ -244,7 +244,7 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
 
 
     memory<dfloat> qtest(K*Nelements*Np);
-    occa::memory o_gq = platform.malloc(K*ogs.Ngather*sizeof(dfloat));
+    deviceMemory<dfloat> o_gq = platform.malloc<dfloat>(K*ogs.Ngather);
     memory<dfloat> gq(K*ogs.Ngather);
 
     //call a gatherScatter operation
@@ -252,9 +252,9 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     // ogs.Gather (gq,     q, ogs::Dfloat, ogs::Trans);
     // ogs.Scatter(qtest, gq, ogs::Dfloat, ogs::Trans);
 
-    q.copyTo(o_q);
-    ogs.GatherScatter(o_q, K, ogs::Dfloat, ogs::Add, ogs::Sym);
-    qtest.copyFrom(o_q);
+    o_q.copyFrom(q);
+    ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "Device GatherScatter", comm);
 
@@ -270,9 +270,9 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
                ogs::Auto, unique, verbose, platform);
 
-    q.copyTo(o_q);
-    sogs.GatherScatter(o_q, K, ogs::Dfloat, ogs::Add, ogs::Sym);
-    qtest.copyFrom(o_q);
+    o_q.copyFrom(q);
+    sogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "Device GatherScatter", comm);
 
@@ -281,10 +281,10 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "Host GatherScatter", comm);
 
-    q.copyTo(o_q);
-    sogs.Gather (o_gq, o_q, K, ogs::Dfloat, ogs::Add, ogs::Trans);
-    sogs.Scatter(o_q, o_gq, K, ogs::Dfloat, ogs::NoTrans);
-    qtest.copyFrom(o_q);
+    o_q.copyFrom(q);
+    sogs.Gather (o_gq, o_q, K, ogs::Add, ogs::Trans);
+    sogs.Scatter(o_q, o_gq, K, ogs::NoTrans);
+    o_q.copyTo(qtest);
 
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "Device Gather+Scatter", comm);

@@ -129,12 +129,40 @@ template
 void ogsOperator_t::Gather(memory<long long int> gv, const memory<long long int> v,
                            const int k, const Op op, const Transpose trans);
 
-void ogsOperator_t::Gather(occa::memory&  o_gv,
-                            occa::memory&  o_v,
-                            const int k,
-                            const Type type,
-                            const Op op,
-                            const Transpose trans) {
+template
+void ogsOperator_t::Gather(pinnedMemory<float> gv, const memory<float> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(pinnedMemory<double> gv, const memory<double> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(pinnedMemory<int> gv, const memory<int> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(pinnedMemory<long long int> gv, const memory<long long int> v,
+                           const int k, const Op op, const Transpose trans);
+
+template
+void ogsOperator_t::Gather(pinnedMemory<float> gv, const pinnedMemory<float> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(pinnedMemory<double> gv, const pinnedMemory<double> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(pinnedMemory<int> gv, const pinnedMemory<int> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(pinnedMemory<long long int> gv, const pinnedMemory<long long int> v,
+                           const int k, const Op op, const Transpose trans);
+
+
+template<typename T>
+void ogsOperator_t::Gather(deviceMemory<T> o_gv,
+                           deviceMemory<T> o_v,
+                           const int k,
+                           const Op op,
+                           const Transpose trans) {
+  constexpr Type type = ogsType<T>::get();
   InitializeKernels(platform, type, op);
 
   if (trans==NoTrans) {
@@ -157,6 +185,20 @@ void ogsOperator_t::Gather(occa::memory&  o_gv,
                               o_gv);
   }
 }
+
+template
+void ogsOperator_t::Gather(deviceMemory<float> gv, const deviceMemory<float> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(deviceMemory<double> gv, const deviceMemory<double> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(deviceMemory<int> gv, const deviceMemory<int> v,
+                           const int k, const Op op, const Transpose trans);
+template
+void ogsOperator_t::Gather(deviceMemory<long long int> gv, const deviceMemory<long long int> v,
+                           const int k, const Op op, const Transpose trans);
+
 
 /********************************
  * Scatter Operation
@@ -208,11 +250,25 @@ template
 void ogsOperator_t::Scatter(memory<long long int> v, const memory<long long int> gv,
                             const int K, const Transpose trans);
 
-void ogsOperator_t::Scatter(occa::memory&  o_v,
-                             occa::memory&  o_gv,
-                             const int k,
-                             const Type type,
-                             const Transpose trans) {
+template
+void ogsOperator_t::Scatter(memory<float> v, const pinnedMemory<float> gv,
+                            const int K, const Transpose trans);
+template
+void ogsOperator_t::Scatter(memory<double> v, const pinnedMemory<double> gv,
+                            const int K, const Transpose trans);
+template
+void ogsOperator_t::Scatter(memory<int> v, const pinnedMemory<int> gv,
+                            const int K, const Transpose trans);
+template
+void ogsOperator_t::Scatter(memory<long long int> v, const pinnedMemory<long long int> gv,
+                            const int K, const Transpose trans);
+
+template<typename T>
+void ogsOperator_t::Scatter(deviceMemory<T> o_v,
+                            deviceMemory<T> o_gv,
+                            const int k,
+                            const Transpose trans) {
+  constexpr Type type = ogsType<T>::get();
   InitializeKernels(platform, type, Add);
 
   if (trans==Trans) {
@@ -235,6 +291,19 @@ void ogsOperator_t::Scatter(occa::memory&  o_v,
                           o_v);
   }
 }
+
+template
+void ogsOperator_t::Scatter(deviceMemory<float> v, const deviceMemory<float> gv,
+                            const int K, const Transpose trans);
+template
+void ogsOperator_t::Scatter(deviceMemory<double> v, const deviceMemory<double> gv,
+                            const int K, const Transpose trans);
+template
+void ogsOperator_t::Scatter(deviceMemory<int> v, const deviceMemory<int> gv,
+                            const int K, const Transpose trans);
+template
+void ogsOperator_t::Scatter(deviceMemory<long long int> v, const deviceMemory<long long int> gv,
+                            const int K, const Transpose trans);
 
 /********************************
  * GatherScatter Operation
@@ -321,11 +390,12 @@ template
 void ogsOperator_t::GatherScatter(memory<long long int> v,const int k,
                                   const Op op, const Transpose trans);
 
-void ogsOperator_t::GatherScatter(occa::memory&  o_v,
+template<typename T>
+void ogsOperator_t::GatherScatter(deviceMemory<T> o_v,
                                   const int k,
-                                  const Type type,
                                   const Op op,
                                   const Transpose trans) {
+  constexpr Type type = ogsType<T>::get();
   InitializeKernels(platform, type, Add);
 
   if (trans==Trans) {
@@ -360,6 +430,19 @@ void ogsOperator_t::GatherScatter(occa::memory&  o_v,
                                      o_v);
   }
 }
+
+template
+void ogsOperator_t::GatherScatter(deviceMemory<float> v,const int k,
+                                  const Op op, const Transpose trans);
+template
+void ogsOperator_t::GatherScatter(deviceMemory<double> v,const int k,
+                                  const Op op, const Transpose trans);
+template
+void ogsOperator_t::GatherScatter(deviceMemory<int> v,const int k,
+                                  const Op op, const Transpose trans);
+template
+void ogsOperator_t::GatherScatter(deviceMemory<long long int> v,const int k,
+                                  const Op op, const Transpose trans);
 
 void ogsOperator_t::setupRowBlocks() {
 
@@ -492,6 +575,15 @@ template void extract(const dlong N, const int K, const memory<dlong> ids,
                       const memory<int> q, memory<int> gatherq);
 template void extract(const dlong N, const int K, const memory<dlong> ids,
                       const memory<long long int> q, memory<long long int> gatherq);
+
+template void extract(const dlong N, const int K, const memory<dlong> ids,
+                      const pinnedMemory<float> q, pinnedMemory<float> gatherq);
+template void extract(const dlong N, const int K, const memory<dlong> ids,
+                      const pinnedMemory<double> q, pinnedMemory<double> gatherq);
+template void extract(const dlong N, const int K, const memory<dlong> ids,
+                      const pinnedMemory<int> q, pinnedMemory<int> gatherq);
+template void extract(const dlong N, const int K, const memory<dlong> ids,
+                      const pinnedMemory<long long int> q, pinnedMemory<long long int> gatherq);
 
 } //namespace ogs
 

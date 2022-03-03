@@ -43,11 +43,11 @@ namespace ogs {
 * Host exchange
 ***********************************/
 template<typename T>
-inline void ogsCrystalRouter_t::Start(memory<T> &buf, const int k,
+inline void ogsCrystalRouter_t::Start(pinnedMemory<T> &buf, const int k,
                                const Op op, const Transpose trans){}
 
 template<typename T>
-inline void ogsCrystalRouter_t::Finish(memory<T> &buf, const int k,
+inline void ogsCrystalRouter_t::Finish(pinnedMemory<T> &buf, const int k,
                                 const Op op, const Transpose trans){
 
 
@@ -58,12 +58,12 @@ inline void ogsCrystalRouter_t::Finish(memory<T> &buf, const int k,
     levels = levelsT;
   }
 
-  memory<T> sendBuf = h_sendspace;
+  pinnedMemory<T> sendBuf = h_sendspace;
 
   // To start,    buf = h_workspace = h_work[(hbuf_id+0)%2];
   //          sendBuf = h_sendspace;
   for (int l=0;l<Nlevels;l++) {
-    memory<T> recvBuf = h_workspace;
+    pinnedMemory<T> recvBuf = h_workspace;
 
     T* sendPtr = sendBuf.ptr();
     T* recvPtr = recvBuf.ptr() + levels[l].recvOffset*k;
@@ -100,32 +100,31 @@ inline void ogsCrystalRouter_t::Finish(memory<T> &buf, const int k,
   }
 }
 
-void ogsCrystalRouter_t::Start(memory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Start(memory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Start(memory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Start(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Finish(memory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Finish(memory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Finish(memory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
-void ogsCrystalRouter_t::Finish(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(pinnedMemory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(pinnedMemory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(pinnedMemory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(pinnedMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(pinnedMemory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(pinnedMemory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(pinnedMemory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(pinnedMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
 
 /**********************************
 * GPU-aware exchange
 ***********************************/
-void ogsCrystalRouter_t::Start(occa::memory &o_buf,
-                               const int k,
-                               const Type type,
-                               const Op op,
-                               const Transpose trans){
+template<typename T>
+inline void ogsCrystalRouter_t::Start(deviceMemory<T> &o_buf,
+                                      const int k,
+                                      const Op op,
+                                      const Transpose trans){
 }
 
-void ogsCrystalRouter_t::Finish(occa::memory &o_buf,
-                                const int k,
-                                const Type type,
-                                const Op op,
-                                const Transpose trans){
+template<typename T>
+inline void ogsCrystalRouter_t::Finish(deviceMemory<T> &o_buf,
+                                       const int k,
+                                       const Op op,
+                                       const Transpose trans){
 
-  const size_t Nbytes = k*Sizeof(type);
   occa::device &device = platform.device;
 
   //get current stream
@@ -141,37 +140,37 @@ void ogsCrystalRouter_t::Finish(occa::memory &o_buf,
     levels = levelsT;
   }
 
-  occa::memory o_sendBuf = o_sendspace;
+  deviceMemory<T> o_sendBuf = o_sendspace;
 
   // To start,    o_buf = o_workspace = o_work[(buf_id+0)%2];
   //          o_sendBuf = o_sendspace
   for (int l=0;l<Nlevels;l++) {
-    occa::memory o_recvBuf = o_workspace;
+    deviceMemory<T> o_recvBuf = o_workspace;
 
-    char* sendPtr = (char*)o_sendBuf.ptr();
-    char* recvPtr = (char*)o_recvBuf.ptr() + levels[l].recvOffset*Nbytes;
+    T* sendPtr = o_sendBuf.ptr();
+    T* recvPtr = o_recvBuf.ptr() + levels[l].recvOffset*k;
 
     //post recvs
     if (levels[l].Nmsg>0) {
-      MPI_Irecv(recvPtr, k*levels[l].Nrecv0, MPI_Type(type),
+      MPI_Irecv(recvPtr, k*levels[l].Nrecv0, mpiType<T>::get(),
                 levels[l].partner, levels[l].partner, comm, request+1);
     }
     if (levels[l].Nmsg==2) {
-      MPI_Irecv(recvPtr+levels[l].Nrecv0*Nbytes,
-                k*levels[l].Nrecv1, MPI_Type(type),
+      MPI_Irecv(recvPtr+levels[l].Nrecv0*k,
+                k*levels[l].Nrecv1, mpiType<T>::get(),
                 rank-1, rank-1, comm, request+2);
     }
 
     //assemble send buffer
     if (levels[l].Nsend) {
-      extractKernel[type](levels[l].Nsend, k,
-                          levels[l].o_sendIds,
-                          o_buf, o_sendBuf);
+      extractKernel[ogsType<T>::get()](levels[l].Nsend, k,
+                                       levels[l].o_sendIds,
+                                       o_buf, o_sendBuf);
       device.finish();
     }
 
     //post send
-    MPI_Isend(sendPtr, k*levels[l].Nsend, MPI_Type(type),
+    MPI_Isend(sendPtr, k*levels[l].Nsend, mpiType<T>::get(),
               levels[l].partner, rank, comm, request+0);
 
     MPI_Waitall(levels[l].Nmsg+1, request, status);
@@ -184,11 +183,21 @@ void ogsCrystalRouter_t::Finish(occa::memory &o_buf,
     o_buf  = o_workspace;
 
     //Gather the recv'd values into the haloBuffer
-    levels[l].gather.Gather(o_buf, o_recvBuf, k, type, op, Trans);
+    levels[l].gather.Gather(o_buf, o_recvBuf, k, op, Trans);
   }
 
   device.setStream(currentStream);
 }
+
+void ogsCrystalRouter_t::Start(deviceMemory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(deviceMemory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(deviceMemory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Start(deviceMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(deviceMemory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(deviceMemory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(deviceMemory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
+void ogsCrystalRouter_t::Finish(deviceMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
+
 
 /*
  *Crystal Router performs the needed MPI communcation via recursive
@@ -731,27 +740,23 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
   }
 
   //make scratch space
-  AllocBuffer(Sizeof(Dfloat));
+  AllocBuffer(sizeof(dfloat));
 }
 
 void ogsCrystalRouter_t::AllocBuffer(size_t Nbytes) {
 
   if (o_sendspace.size() < NsendMax*Nbytes) {
-    // sendspace = static_cast<char*>(platform.hostMalloc(NsendMax*Nbytes,  nullptr, h_sendspace));
-    h_sendspace.malloc(NsendMax*Nbytes);
-    o_sendspace = platform.malloc(NsendMax*Nbytes);
+    h_sendspace = platform.hostMalloc<char>(NsendMax*Nbytes);
+    o_sendspace = platform.malloc<char>(NsendMax*Nbytes);
   }
   if (o_work[0].size() < NrecvMax*Nbytes) {
-    // buf[0] = static_cast<char*>(platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_work[0]));
-    // buf[1] = static_cast<char*>(platform.hostMalloc(NrecvMax*Nbytes,  nullptr, h_work[1]));
-    // h_haloBuf.ptr() = buf[0];
-    h_work[0].malloc(NrecvMax*Nbytes);
-    h_work[1].malloc(NrecvMax*Nbytes);
+    h_work[0] = platform.hostMalloc<char>(NrecvMax*Nbytes);
+    h_work[1] = platform.hostMalloc<char>(NrecvMax*Nbytes);
     h_workspace = h_work[0];
     hbuf_id=0;
 
-    o_work[0] = platform.malloc(NrecvMax*Nbytes);
-    o_work[1] = platform.malloc(NrecvMax*Nbytes);
+    o_work[0] = platform.malloc<char>(NrecvMax*Nbytes);
+    o_work[1] = platform.malloc<char>(NrecvMax*Nbytes);
     o_workspace = o_work[0];
     buf_id=0;
   }

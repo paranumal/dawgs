@@ -152,26 +152,6 @@ void InitializeKernels(platform_t& platform, const Type type, const Op op) {
   }
 }
 
-size_t Sizeof(const Type type) {
-  switch(type) {
-    case  Float: return sizeof(float);
-    case Double: return sizeof(double);
-    case  Int32: return sizeof(int32_t);
-    case  Int64: return sizeof(int64_t);
-  }
-  return 0;
-}
-
-MPI_Datatype MPI_Type(const Type type) {
-  switch(type) {
-    case  Float: return MPI_FLOAT;
-    case Double: return MPI_DOUBLE;
-    case  Int32: return MPI_INT32_T;
-    case  Int64: return MPI_INT64_T;
-  }
-  return 0;
-}
-
 } //namespace ogs
 
 } //namespace libp

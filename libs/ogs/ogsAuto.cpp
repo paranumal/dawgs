@@ -43,8 +43,8 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   MPI_Comm_rank(exchange->comm, &rank);
   MPI_Comm_size(exchange->comm, &size);
 
-  memory<dfloat> buf = exchange->h_workspace;
-  occa::memory o_buf = exchange->o_workspace;
+  pinnedMemory<dfloat>   buf = exchange->h_workspace;
+  deviceMemory<dfloat> o_buf = exchange->o_workspace;
 
   occa::device &device = exchange->platform.device;
 
@@ -52,11 +52,11 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   for (int n=0;n<Ncold;++n) {
     if (exchange->gpu_aware) {
       /*GPU-aware exchange*/
-      exchange->Start (o_buf, 1, Dfloat, Add, Sym);
-      exchange->Finish(o_buf, 1, Dfloat, Add, Sym);
+      exchange->Start (o_buf, 1, Add, Sym);
+      exchange->Finish(o_buf, 1, Add, Sym);
     } else {
       //if not using gpu-aware mpi move the halo buffer to the host
-      o_buf.copyTo(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+      o_buf.copyTo(buf, exchange->Nhalo,
                    0, "async: true");
       device.finish();
 
@@ -65,7 +65,7 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
       exchange->Finish(buf, 1, Add, Sym);
 
       // copy recv back to device
-      o_buf.copyFrom(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+      o_buf.copyFrom(buf, exchange->Nhalo,
                      0, "async: true");
       device.finish(); //wait for transfer to finish
     }
@@ -76,11 +76,11 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   for (int n=0;n<Nhot;++n) {
     if (exchange->gpu_aware) {
       /*GPU-aware exchange*/
-      exchange->Start (o_buf, 1, Dfloat, Add, Sym);
-      exchange->Finish(o_buf, 1, Dfloat, Add, Sym);
+      exchange->Start (o_buf, 1, Add, Sym);
+      exchange->Finish(o_buf, 1, Add, Sym);
     } else {
       //if not using gpu-aware mpi move the halo buffer to the host
-      o_buf.copyTo(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+      o_buf.copyTo(buf, exchange->Nhalo,
                    0, "async: true");
       device.finish();
 
@@ -89,7 +89,7 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
       exchange->Finish(buf, 1, Add, Sym);
 
       // copy recv back to device
-      o_buf.copyFrom(buf.ptr(), exchange->Nhalo*sizeof(dfloat),
+      o_buf.copyFrom(buf, exchange->Nhalo,
                      0, "async: true");
       device.finish(); //wait for transfer to finish
     }
@@ -116,7 +116,7 @@ static void HostExchangeTest(ogsExchange_t* exchange, double time[3]) {
   MPI_Comm_rank(exchange->comm, &rank);
   MPI_Comm_size(exchange->comm, &size);
 
-  memory<dfloat> buf = exchange->h_workspace;
+  pinnedMemory<dfloat> buf = exchange->h_workspace;
 
   //dry run
   for (int n=0;n<Ncold;++n) {

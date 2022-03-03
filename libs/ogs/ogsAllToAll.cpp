@@ -43,10 +43,10 @@ namespace ogs {
 * Host exchange
 ***********************************/
 template<typename T>
-inline void ogsAllToAll_t::Start(memory<T> &buf, const int k,
+inline void ogsAllToAll_t::Start(pinnedMemory<T> &buf, const int k,
                           const Op op, const Transpose trans){
 
-  memory<T> sendBuf = h_sendspace;
+  pinnedMemory<T> sendBuf = h_sendspace;
 
   // extract the send buffer
   if (trans == NoTrans)
@@ -80,7 +80,7 @@ inline void ogsAllToAll_t::Start(memory<T> &buf, const int k,
 }
 
 template<typename T>
-inline void ogsAllToAll_t::Finish(memory<T> &buf, const int k,
+inline void ogsAllToAll_t::Finish(pinnedMemory<T> &buf, const int k,
                            const Op op, const Transpose trans){
 
   MPI_Wait(&request, MPI_STATUS_IGNORE);
@@ -94,34 +94,34 @@ inline void ogsAllToAll_t::Finish(memory<T> &buf, const int k,
   }
 }
 
-void ogsAllToAll_t::Start(memory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
-void ogsAllToAll_t::Start(memory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
-void ogsAllToAll_t::Start(memory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
-void ogsAllToAll_t::Start(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
-void ogsAllToAll_t::Finish(memory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
-void ogsAllToAll_t::Finish(memory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
-void ogsAllToAll_t::Finish(memory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
-void ogsAllToAll_t::Finish(memory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(pinnedMemory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(pinnedMemory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(pinnedMemory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(pinnedMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(pinnedMemory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(pinnedMemory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(pinnedMemory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(pinnedMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
 
 /**********************************
 * GPU-aware exchange
 ***********************************/
-void ogsAllToAll_t::Start(occa::memory &o_buf,
+template<typename T>
+void ogsAllToAll_t::Start(deviceMemory<T> &o_buf,
                           const int k,
-                          const Type type,
                           const Op op,
                           const Transpose trans){
 
   const dlong Nsend = (trans == NoTrans) ? NsendN : NsendT;
 
   if (Nsend) {
-    occa::memory o_sendBuf = o_sendspace;
+    deviceMemory<T> o_sendBuf = o_sendspace;
 
     // assemble the send buffer on device
     if (trans == NoTrans) {
-      extractKernel[type](NsendN, k, o_sendIdsN, o_buf, o_sendBuf);
+      extractKernel[ogsType<T>::get()](NsendN, k, o_sendIdsN, o_buf, o_sendBuf);
     } else {
-      extractKernel[type](NsendT, k, o_sendIdsT, o_buf, o_sendBuf);
+      extractKernel[ogsType<T>::get()](NsendT, k, o_sendIdsT, o_buf, o_sendBuf);
     }
     //wait for kernel to finish on default stream
     occa::device &device = platform.device;
@@ -129,16 +129,16 @@ void ogsAllToAll_t::Start(occa::memory &o_buf,
   }
 }
 
-void ogsAllToAll_t::Finish(occa::memory &o_buf,
+template<typename T>
+void ogsAllToAll_t::Finish(deviceMemory<T> &o_buf,
                            const int k,
-                           const Type type,
                            const Op op,
                            const Transpose trans){
 
-  const size_t Nbytes = k*Sizeof(type);
+  deviceMemory<T> o_sendBuf = o_sendspace;
 
-  char* sendPtr = static_cast<char*>(o_sendspace.ptr());
-  char* recvPtr = static_cast<char*>(o_buf.ptr()) + Nhalo*Nbytes;
+  T* sendPtr = o_sendBuf.ptr();
+  T* recvPtr = o_buf.ptr() + Nhalo*k;
 
   if (trans==NoTrans) {
     for (int r=0;r<size;++r) {
@@ -157,8 +157,8 @@ void ogsAllToAll_t::Finish(occa::memory &o_buf,
   }
 
   // collect everything needed with single MPI all to all
-  MPI_Alltoallv(sendPtr, sendCounts.ptr(), sendOffsets.ptr(), MPI_Type(type),
-                recvPtr, recvCounts.ptr(), recvOffsets.ptr(), MPI_Type(type),
+  MPI_Alltoallv(sendPtr, sendCounts.ptr(), sendOffsets.ptr(), mpiType<T>::get(),
+                recvPtr, recvCounts.ptr(), recvOffsets.ptr(), mpiType<T>::get(),
                 comm);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
@@ -166,9 +166,18 @@ void ogsAllToAll_t::Finish(occa::memory &o_buf,
   dlong Nrecv = recvOffsets[size];
   if (Nrecv) {
     // gather the recieved nodes on device
-    postmpi.Gather(o_buf, o_buf, k, type, op, trans);
+    postmpi.Gather(o_buf, o_buf, k, op, trans);
   }
 }
+
+void ogsAllToAll_t::Start(deviceMemory<float> &buf, const int k, const Op op, const Transpose trans) { Start<float>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(deviceMemory<double> &buf, const int k, const Op op, const Transpose trans) { Start<double>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(deviceMemory<int> &buf, const int k, const Op op, const Transpose trans) { Start<int>(buf, k, op, trans); }
+void ogsAllToAll_t::Start(deviceMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Start<long long int>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(deviceMemory<float> &buf, const int k, const Op op, const Transpose trans) { Finish<float>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(deviceMemory<double> &buf, const int k, const Op op, const Transpose trans) { Finish<double>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(deviceMemory<int> &buf, const int k, const Op op, const Transpose trans) { Finish<int>(buf, k, op, trans); }
+void ogsAllToAll_t::Finish(deviceMemory<long long int> &buf, const int k, const Op op, const Transpose trans) { Finish<long long int>(buf, k, op, trans); }
 
 ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
                              libp::memory<parallelNode_t> &sharedNodes,
@@ -341,21 +350,17 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
   recvOffsets[0]=0;
 
   //make scratch space
-  AllocBuffer(Sizeof(Dfloat));
+  AllocBuffer(sizeof(dfloat));
 }
 
 void ogsAllToAll_t::AllocBuffer(size_t Nbytes) {
   if (o_workspace.size() < postmpi.nnzT*Nbytes) {
-    if (o_workspace.size()) o_workspace.free();
-    // h_haloBuf.ptr() = static_cast<char*>(platform.hostMalloc(postmpi.nnzT*Nbytes,  nullptr, h_haloBuf));
-    h_workspace.malloc(postmpi.nnzT*Nbytes);
-    o_workspace = platform.malloc(postmpi.nnzT*Nbytes);
+    h_workspace = platform.hostMalloc<char>(postmpi.nnzT*Nbytes);
+    o_workspace = platform.malloc<char>(postmpi.nnzT*Nbytes);
   }
   if (o_sendspace.size() < NsendT*Nbytes) {
-    if (o_sendspace.size()) o_sendspace.free();
-    // sendBuf = static_cast<char*>(platform.hostMalloc(NsendT*Nbytes,  nullptr, h_sendBuf));
-    h_sendspace.malloc(NsendT*Nbytes);
-    o_sendspace = platform.malloc(NsendT*Nbytes);
+    h_sendspace = platform.hostMalloc<char>(NsendT*Nbytes);
+    o_sendspace = platform.malloc<char>(NsendT*Nbytes);
   }
 }
 

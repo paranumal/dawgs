@@ -51,17 +51,17 @@ public:
   memory<dlong> colIdsN;
   memory<dlong> colIdsT;
 
-  occa::memory o_rowStartsN;
-  occa::memory o_rowStartsT;
-  occa::memory o_colIdsN;
-  occa::memory o_colIdsT;
+  deviceMemory<dlong> o_rowStartsN;
+  deviceMemory<dlong> o_rowStartsT;
+  deviceMemory<dlong> o_colIdsN;
+  deviceMemory<dlong> o_colIdsT;
 
   dlong NrowBlocksN=0;
   dlong NrowBlocksT=0;
   memory<dlong> blockRowStartsN;
   memory<dlong> blockRowStartsT;
-  occa::memory o_blockRowStartsN;
-  occa::memory o_blockRowStartsT;
+  deviceMemory<dlong> o_blockRowStartsN;
+  deviceMemory<dlong> o_blockRowStartsT;
 
   Kind kind;
 
@@ -74,39 +74,35 @@ public:
   void setupRowBlocks();
 
   //Apply Z operator
-  void Gather(occa::memory&  o_gv,
-              occa::memory&  o_v,
-              const int k,
-              const Type type,
-              const Op op,
-              const Transpose trans);
   template<template<typename> class U,
            template<typename> class V,
            typename T>
   void Gather(U<T> gv, const V<T> v,
               const int k, const Op op, const Transpose trans);
 
+  template<typename T>
+  void Gather(deviceMemory<T> gv, const deviceMemory<T> v,
+              const int k, const Op op, const Transpose trans);
+
   //Apply Z^T transpose operator
-  void Scatter(occa::memory&  o_v,
-               occa::memory&  o_gv,
-               const int k,
-               const Type type,
-               const Transpose trans);
   template<template<typename> class U,
            template<typename> class V,
            typename T>
   void Scatter(U<T> v, const V<T> gv,
                const int k, const Transpose trans);
 
+  template<typename T>
+  void Scatter(deviceMemory<T> v, const deviceMemory<T> gv,
+               const int k, const Transpose trans);
+
   //Apply Z^T*Z operator
-  void GatherScatter(occa::memory&  o_v,
-                     const int k,
-                     const Type type,
-                     const Op op,
-                     const Transpose trans);
   template<template<typename> class U,
            typename T>
   void GatherScatter(U<T> v, const int k,
+                     const Op op, const Transpose trans);
+
+  template<typename T>
+  void GatherScatter(deviceMemory<T> v, const int k,
                      const Op op, const Transpose trans);
 
 private:
