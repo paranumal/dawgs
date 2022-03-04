@@ -130,10 +130,10 @@ inline void ogsCrystalRouter_t::Finish(deviceMemory<T> &o_buf,
                                        const Op op,
                                        const Transpose trans){
 
-  occa::device &device = platform.device;
+  device_t &device = platform.device;
 
   //get current stream
-  occa::stream currentStream = device.getStream();
+  stream_t currentStream = device.getStream();
 
   //the intermediate kernels are always overlapped with the default stream
   device.setStream(dataStream);
@@ -247,7 +247,7 @@ void ogsCrystalRouter_t::Finish(deviceMemory<long long int> &buf, const int k, c
 ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
                                        libp::memory<parallelNode_t> &sharedNodes,
                                        ogsOperator_t& gatherHalo,
-                                       occa::stream _dataStream,
+                                       stream_t _dataStream,
                                        comm_t _comm,
                                        platform_t &_platform):
   ogsExchange_t(_platform,_comm,_dataStream) {

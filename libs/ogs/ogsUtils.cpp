@@ -34,13 +34,13 @@ namespace libp {
 
 namespace ogs {
 
-occa::stream ogsBase_t::dataStream;
+stream_t ogsBase_t::dataStream;
 
-occa::kernel ogsOperator_t::gatherScatterKernel[4][4];
-occa::kernel ogsOperator_t::gatherKernel[4][4];
-occa::kernel ogsOperator_t::scatterKernel[4];
+kernel_t ogsOperator_t::gatherScatterKernel[4][4];
+kernel_t ogsOperator_t::gatherKernel[4][4];
+kernel_t ogsOperator_t::scatterKernel[4];
 
-occa::kernel ogsExchange_t::extractKernel[4];
+kernel_t ogsExchange_t::extractKernel[4];
 
 
 void InitializeKernels(platform_t& platform, const Type type, const Op op) {
@@ -48,7 +48,7 @@ void InitializeKernels(platform_t& platform, const Type type, const Op op) {
   //check if the gather kernel is initialized
   if (!ogsOperator_t::gatherKernel[type][op].isInitialized()) {
 
-    occa::properties kernelInfo = platform.props();
+    properties_t kernelInfo = platform.props();
 
     kernelInfo["defines/p_blockSize"] = ogsOperator_t::blockSize;
     kernelInfo["defines/p_gatherNodesPerBlock"] = ogsOperator_t::gatherNodesPerBlock;

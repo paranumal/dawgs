@@ -28,12 +28,13 @@ SOFTWARE.
 
 namespace libp {
 
-occa::kernel platform_t::buildKernel(std::string fileName, std::string kernelName,
-                                     occa::properties& kernelInfo){
+kernel_t platform_t::buildKernel(std::string fileName,
+                                 std::string kernelName,
+                                 properties_t& kernelInfo){
 
   assertInitialized();
 
-  occa::kernel kernel;
+  kernel_t kernel;
 
   //build on root first
   if (!rank())

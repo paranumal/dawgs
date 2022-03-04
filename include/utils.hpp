@@ -30,6 +30,13 @@ SOFTWARE.
 #include <string>
 #include "types.h"
 
+namespace libp {
+
+using properties_t = occa::json;
+using device_t = occa::device;
+using kernel_t = occa::kernel;
+using stream_t = occa::stream;
+
 //error codes
 #define LIBP_SUCCESS 0
 #define LIBP_ERROR -1
@@ -62,5 +69,7 @@ SOFTWARE.
        << "     " << message  << '\n'                               \
        << std::string(74, '=') << '\n';                             \
   }
+
+} //namespace libp
 
 #endif

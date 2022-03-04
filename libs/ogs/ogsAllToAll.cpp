@@ -121,7 +121,7 @@ void ogsAllToAll_t::Start(deviceMemory<T> &o_buf,
       extractKernel[ogsType<T>::get()](NsendT, k, o_sendIdsT, o_buf, o_sendBuf);
     }
     //wait for kernel to finish on default stream
-    occa::device &device = platform.device;
+    device_t &device = platform.device;
     device.finish();
   }
 }
@@ -175,7 +175,7 @@ void ogsAllToAll_t::Finish(deviceMemory<long long int> &buf, const int k, const 
 ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
                              libp::memory<parallelNode_t> &sharedNodes,
                              ogsOperator_t& gatherHalo,
-                             occa::stream _dataStream,
+                             stream_t _dataStream,
                              comm_t _comm,
                              platform_t &_platform):
   ogsExchange_t(_platform,_comm, _dataStream) {

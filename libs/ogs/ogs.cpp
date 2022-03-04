@@ -62,8 +62,8 @@ void ogs_t::GatherScatterStart(deviceMemory<T> o_v,
     exchange->Start(o_haloBuf, k, op, trans);
   } else {
     //get current stream
-    occa::device &device = platform.device;
-    occa::stream currentStream = device.getStream();
+    device_t &device = platform.device;
+    stream_t currentStream = device.getStream();
 
     pinnedMemory<T> haloBuf = exchange->h_workspace;
 
@@ -99,8 +99,8 @@ void ogs_t::GatherScatterFinish(deviceMemory<T> o_v,
     pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //get current stream
-    occa::device &device = platform.device;
-    occa::stream currentStream = device.getStream();
+    device_t &device = platform.device;
+    stream_t currentStream = device.getStream();
 
     //synchronize data stream to ensure the buffer is on the host
     device.setStream(dataStream);
@@ -230,8 +230,8 @@ void ogs_t::GatherStart(deviceMemory<T> o_gv,
       exchange->Start(o_haloBuf, k, op, Trans);
     } else {
       //get current stream
-      occa::device &device = platform.device;
-      occa::stream currentStream = device.getStream();
+      device_t &device = platform.device;
+      stream_t currentStream = device.getStream();
 
       //if not using gpu-aware mpi move the halo buffer to the host
       pinnedMemory<T> haloBuf = exchange->h_workspace;
@@ -276,8 +276,8 @@ void ogs_t::GatherFinish(deviceMemory<T> o_gv,
       pinnedMemory<T> haloBuf = exchange->h_workspace;
 
       //get current stream
-      occa::device &device = platform.device;
-      occa::stream currentStream = device.getStream();
+      device_t &device = platform.device;
+      stream_t currentStream = device.getStream();
 
       //synchronize data stream to ensure the buffer is on the host
       device.setStream(dataStream);
@@ -410,7 +410,7 @@ void ogs_t::ScatterStart(deviceMemory<T> o_v,
   if (trans==NoTrans) { //if trans!=ogs::NoTrans theres no comms required
     exchange->AllocBuffer(k*sizeof(T));
 
-    occa::device &device = platform.device;
+    device_t &device = platform.device;
 
     if (exchange->gpu_aware) {
       //collect halo buffer
@@ -424,7 +424,7 @@ void ogs_t::ScatterStart(deviceMemory<T> o_v,
       exchange->Start(o_haloBuf, k, Add, NoTrans);
     } else {
       //get current stream
-      occa::stream currentStream = device.getStream();
+      stream_t currentStream = device.getStream();
 
       //if not using gpu-aware mpi move the halo buffer to the host
       pinnedMemory<T> haloBuf = exchange->h_workspace;
@@ -461,8 +461,8 @@ void ogs_t::ScatterFinish(deviceMemory<T> o_v,
       pinnedMemory<T> haloBuf = exchange->h_workspace;
 
       //get current stream
-      occa::device &device = platform.device;
-      occa::stream currentStream = device.getStream();
+      device_t &device = platform.device;
+      stream_t currentStream = device.getStream();
 
       //synchronize data stream to ensure the buffer is on the host
       device.setStream(dataStream);

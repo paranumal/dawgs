@@ -37,8 +37,6 @@ SOFTWARE.
 
 namespace libp {
 
-using properties_t = occa::json;
-
 template<typename T>
 class memory {
   template <typename U> friend class memory;

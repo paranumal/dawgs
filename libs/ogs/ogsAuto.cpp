@@ -45,7 +45,7 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   pinnedMemory<dfloat>   buf = exchange->h_workspace;
   deviceMemory<dfloat> o_buf = exchange->o_workspace;
 
-  occa::device &device = exchange->platform.device;
+  device_t &device = exchange->platform.device;
 
   //dry run
   for (int n=0;n<Ncold;++n) {

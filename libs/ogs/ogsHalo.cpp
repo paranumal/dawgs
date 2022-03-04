@@ -63,8 +63,8 @@ void halo_t::ExchangeStart(deviceMemory<T> o_v, const int k){
 
   } else {
     //get current stream
-    occa::device &device = platform.device;
-    occa::stream currentStream = device.getStream();
+    device_t &device = platform.device;
+    stream_t currentStream = device.getStream();
 
     //if not using gpu-aware mpi move the halo buffer to the host
     pinnedMemory<T> haloBuf = exchange->h_workspace;
@@ -114,8 +114,8 @@ void halo_t::ExchangeFinish(deviceMemory<T> o_v, const int k){
     pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //get current stream
-    occa::device &device = platform.device;
-    occa::stream currentStream = device.getStream();
+    device_t &device = platform.device;
+    stream_t currentStream = device.getStream();
 
     //synchronize data stream to ensure the buffer is on the host
     device.setStream(dataStream);
@@ -225,8 +225,8 @@ void halo_t::CombineStart(deviceMemory<T> o_v, const int k){
     exchange->Start(o_haloBuf, k, Add, Trans);
   } else {
     //get current stream
-    occa::device &device = platform.device;
-    occa::stream currentStream = device.getStream();
+    device_t &device = platform.device;
+    stream_t currentStream = device.getStream();
 
     //if not using gpu-aware mpi move the halo buffer to the host
     pinnedMemory<T> haloBuf = exchange->h_workspace;
@@ -277,8 +277,8 @@ void halo_t::CombineFinish(deviceMemory<T> o_v, const int k){
     pinnedMemory<T> haloBuf = exchange->h_workspace;
 
     //get current stream
-    occa::device &device = platform.device;
-    occa::stream currentStream = device.getStream();
+    device_t &device = platform.device;
+    stream_t currentStream = device.getStream();
 
     //synchronize data stream to ensure the buffer is on the host
     device.setStream(dataStream);

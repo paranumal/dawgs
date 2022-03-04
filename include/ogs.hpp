@@ -57,9 +57,9 @@ SOFTWARE.
 
   A basic gatherScatter operation is, e.g.,
 
-    occa::memory o_v;
+    deviceMemory<double> o_v;
     ...
-    ogs.GatherScatter(o_v, 1, ogs::Double, ogs::Add, ogs::Sym);
+    ogs.GatherScatter(o_v, 1, ogs::Add, ogs::Sym);
 
   This gs call has the effect,
 
@@ -74,14 +74,11 @@ SOFTWARE.
   Summation on doubles is not the only operation and datatype supported. Support
   includes the operations
     ogs::Add, ogs::Mul, ogs::Max, ogs::Min
-  and datatypes
-    ogs::Dfloat, ogs::Double, ogs::Float, ogs::Int32, ogs::Int64, ogs::Dlong, ogs::Hlong.
-  (The int32 and int64 types are the normal C++ types, whereas dfloat, dlong, and hlong
-   are defined in "types.h").
+  and datatypes: float, double, int, long long int.
 
   For the nonsymmetric behavior, the "Transpose" parameter is important:
 
-    ogs.GatherScatter(o_v, 1, ogs::Double, ogs::Add, ogs::[NoTrans/Trans/Sym]);
+    ogs.GatherScatter(o_v, 1, ogs::Add, ogs::[NoTrans/Trans/Sym]);
 
   When transpose == ogs::NoTrans, any "flagged" (p,i) pairs (id[i] negative on p)
   do not participate in the sum, but *do* still receive the sum on output.
@@ -102,7 +99,7 @@ SOFTWARE.
   consistent way. When all groups of (p,i) pairs have a single "unflagged"
   pair in this mannor, an additional nonsymmetric operation is available:
 
-    ogs.Gather(o_Gv, o_v, 1, ogs::Double, ogs::Add, ogs::Trans);
+    ogs.Gather(o_Gv, o_v, 1, ogs::Add, ogs::Trans);
 
   this has the effect of "assembling" the vector o_Gv. That is
 
@@ -115,7 +112,7 @@ SOFTWARE.
 
   The inverse of this operation is
 
-    ogs.Scatter(o_v, o_Gv, 1, ogs::Double, ogs::Add, ogs::Trans);
+    ogs.Scatter(o_v, o_Gv, 1, ogs::Add, ogs::Trans);
 
   which has the effect of scattering in the assembled entries in o_Gv back to the
   orginal ordering. When Transpose == ogs::Trans, "flagged" (p,i) pairs (id[i]
@@ -124,7 +121,7 @@ SOFTWARE.
 
   For operating on contiguously packed vectors, the K parameter is used, e.g.,
 
-    ogs.GatherScatter(o_v, 3, ogs::Double, ogs::Add, ogs::Sym);
+    ogs.GatherScatter(o_v, 3, ogs::Add, ogs::Sym);
 
   which is like "GatherScatter" operating on the datatype double[3],
   with summation here being vector summation. Number of messages sent
@@ -132,9 +129,9 @@ SOFTWARE.
 
   Asynchronous versions of the various GatherScatter functions are provided by
 
-    ogs.GatherScatterStart(o_v, k, ogs::Double, ogs::Add, ogs::Sym);
+    ogs.GatherScatterStart(o_v, k, ogs::Add, ogs::Sym);
     ...
-    ogs.GatherScatterFinish(o_v, k, ogs::Double, ogs::Add, ogs::Sym);
+    ogs.GatherScatterFinish(o_v, k, ogs::Add, ogs::Sym);
 
   MPI communication is not initiated in GatherScatterStart, rather some initial
   message packing and host<->device transfers are queued. The user can then queue
@@ -154,14 +151,14 @@ SOFTWARE.
 
     halo_t halo(platofrm);
     halo.Setup(N, ids, comm, ogs::Auto, verbose);
-    halo.Exchange(o_v, k, ogs::Double);
+    halo.Exchange(o_v, k);
 
   which has the effect of filling all "flagged" pairs (p,i) on all processes with
   the corresponding value from the unique "unflagged" pair in S_j.
 
   An additional untility operation available in the halo_t object is
 
-    halo.Combine(o_v, k, ogs::Double);
+    halo.Combine(o_v, k);
 
   which has the effect of summing the entries in S_j and writing the result to
   the sole "unflagged" pair in S_j.
