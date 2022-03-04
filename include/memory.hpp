@@ -370,7 +370,10 @@ class deviceMemory: public occa::memory {
   }
 
   deviceMemory<T> operator + (const ptrdiff_t offset) const {
-    return deviceMemory<T>(occa::memory::operator+(offset));
+    if (isInitialized())
+      return deviceMemory<T>(occa::memory::operator+(offset));
+    else
+      return deviceMemory<T>();
   }
 
   deviceMemory<T>& operator += (const ptrdiff_t offset) {
@@ -559,7 +562,10 @@ class pinnedMemory: public occa::memory {
   }
 
   pinnedMemory<T> operator + (const ptrdiff_t offset) const {
-    return pinnedMemory<T>(occa::memory::operator+(offset));
+    if (isInitialized())
+      return pinnedMemory<T>(occa::memory::operator+(offset));
+    else
+      return pinnedMemory<T>();
   }
 
   pinnedMemory<T>& operator += (const ptrdiff_t offset) {

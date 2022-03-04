@@ -84,11 +84,11 @@ dawgsSettings_t::dawgsSettings_t(const int argc, char** argv, comm_t _comm):
              "Enable verbose output",
              {"TRUE", "FALSE"});
 
-  newSetting("-ga", "--gpu-aware",
-             "GPU AWARE",
-             "FALSE",
-             "Enable GPU aware",
-             {"TRUE", "FALSE"});
+  newSetting("-mth", "--method",
+             "METHOD",
+             "All",
+             "Exchange method to use",
+             {"Pairwise", "Alltoall", "CrystalRouter", "All"});
 
   newSetting("-cc", "--correctness-check",
              "CORRECTNESS CHECK",
@@ -127,8 +127,8 @@ void dawgsSettings_t::report() {
 
     reportSetting("POLYNOMIAL DEGREE");
 
-    reportSetting("GPU AWARE");
-
+    reportSetting("METHOD");
     reportSetting("CORRECTNESS CHECK");
+    reportSetting("SWEEP");
   }
 }

@@ -50,5 +50,7 @@ void *gsSetup(MPI_Comm meshComm,
 void gsGatherScatter(void* v, void *gsh, int transpose);
 void gsGatherScatterVec(void* v, int K, void *gsh, int transpose);
 
+void gsFree(void* gs);
+
 #endif
 
