@@ -28,6 +28,7 @@ SOFTWARE.
 #include "ogs/ogsUtils.hpp"
 #include "ogs/ogsOperator.hpp"
 #include "ogs/ogsExchange.hpp"
+#include "timer.hpp"
 
 #ifdef GLIBCXX_PARALLEL
 #include <parallel/algorithm>
@@ -76,6 +77,8 @@ void ogsBase_t::Setup(const dlong _N,
 
   //release resources if this ogs was setup before
   Free();
+
+  timePoint_t start = Time();
 
   platform = _platform;
 
@@ -176,6 +179,13 @@ void ogsBase_t::Setup(const dlong _N,
                   AutoSetup(Nshared, sharedNodes,
                             *gatherHalo, comm,
                             platform, verbose));
+  }
+
+  timePoint_t end = GlobalPlatformTime(platform);
+  double elapsedTime = ElapsedTime(start, end);
+
+  if (!rank && verbose) {
+    std::cout << "ogs Setup Time: " << elapsedTime << " seconds." << std::endl;
   }
 }
 
