@@ -120,9 +120,7 @@ public:
       const setting_t& val = search->second;
       value = val.getVal<T>();
     } else {
-      stringstream ss;
-      ss << "Unable to find setting: [" << name << "]";
-      LIBP_ABORT(ss.str());
+      LIBP_FORCE_ABORT("Unable to find setting: [" << name << "]");
     }
   }
 

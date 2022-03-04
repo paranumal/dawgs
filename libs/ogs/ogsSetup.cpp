@@ -95,9 +95,9 @@ void ogsBase_t::Setup(const dlong _N,
   size = comm.size();
 
   //sanity check options
-  if (   (kind==Unsigned && unique==true)
-      || (kind==Halo && unique==true) )
-    LIBP_ABORT("Invalid ogs setup requested");
+  LIBP_ABORT("Invalid ogs setup requested",
+             (kind==Unsigned && unique==true)
+              || (kind==Halo && unique==true));
 
   //count how many ids are non-zero
   dlong Nids=0;
@@ -283,12 +283,9 @@ void ogsBase_t::FindSharedNodes(const dlong Nids,
       }
 
       // When making a halo excahnge, check that we have a leading positive id
-      if (kind==Halo && positiveCount!=1) {
-        std::stringstream ss;
-        ss << "Found " << positiveCount << " positive Ids for baseId: "
-           << abs(recvNodes[start].baseId)<< ".";
-        LIBP_ABORT(ss.str());
-      }
+      LIBP_ABORT("Found " << positiveCount << " positive Ids for baseId: "
+                 << abs(recvNodes[start].baseId)<< ".",
+                 kind==Halo && positiveCount!=1);
 
       //determine if this node is shared via MPI,
       int shared=1;
@@ -862,17 +859,15 @@ void ogsBase_t::Free() {
 }
 
 void ogsBase_t::AssertGatherDefined() {
-  if (!gather_defined) {
-    LIBP_ABORT("Gather operation not well-defined.");
-  }
+  LIBP_ABORT("Gather operation not well-defined.",
+             !gather_defined);
 }
 
 //Populate the local mapping of the original ids and the gathered ordering
 void ogs_t::SetupGlobalToLocalMapping(memory<dlong> GlobalToLocal) {
 
-  if (NgatherGlobal==0) {
-    LIBP_ABORT("ogs handle is not set up.");
-  }
+  LIBP_ABORT("ogs handle is not set up.",
+             NgatherGlobal==0);
 
   //Note: Must have GlobalToLocal have N entries.
 

@@ -97,9 +97,8 @@ public:
   }
 
   void assertInitialized() const {
-    if(!isInitialized()) {
-      LIBP_ABORT("Platform not initialized.");
-    }
+    LIBP_ABORT("Platform not initialized.",
+               !isInitialized());
   }
 
   occa::kernel buildKernel(std::string fileName, std::string kernelName,

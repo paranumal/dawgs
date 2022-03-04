@@ -27,12 +27,6 @@ SOFTWARE.
 #ifndef CORE_HPP
 #define CORE_HPP
 
-#include <mpi.h>
-#include <occa.hpp>
-#include <string>
-#include <cstring>
-#include <algorithm>
-#include <cmath>
 #include "utils.hpp"
 #include "memory.hpp"
 #include "comm.hpp"

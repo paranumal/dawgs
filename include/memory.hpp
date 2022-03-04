@@ -27,12 +27,6 @@ SOFTWARE.
 #ifndef LIBP_MEMORY_HPP
 #define LIBP_MEMORY_HPP
 
-#include <cstddef>
-#include <memory>
-#include <algorithm>
-#include <iostream>
-#include <typeinfo>
-#include <occa.hpp>
 #include "utils.hpp"
 
 namespace libp {
@@ -77,20 +71,15 @@ class memory {
     lngth{m.lngth*sizeof(T)/sizeof(U)},
     offset{m.offset*sizeof(T)/sizeof(U)} {
     // Check that this conversion made sense
-    if(lngth*sizeof(U) != m.lngth*sizeof(T)) {
-      std::stringstream ss;
-      ss << "libp::memory type conversion failed. Trying to convert "
-         << m.lngth << " " << sizeof(T) << "-byte words to "
-         << lngth << " " << sizeof(U) << "-byte words.";
-      LIBP_ABORT(ss.str());
-    }
-    if(offset*sizeof(U) != m.offset*sizeof(T)) {
-      std::stringstream ss;
-      ss << "libp::memory type conversion failed. Source memory has offset at "
-         << m.lngth << " " << sizeof(T) << "-byte words, destination memory would have offset at"
-         << lngth << " " << sizeof(U) << "-byte words.";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory type conversion failed. Trying to convert "
+                << m.lngth << " " << sizeof(T) << "-byte words to "
+                << lngth << " " << sizeof(U) << "-byte words.",
+                lngth*sizeof(U) != m.lngth*sizeof(T));
+
+    LIBP_ABORT("libp::memory type conversion failed. Source memory has offset at "
+               << m.lngth << " " << sizeof(T) << "-byte words, destination memory would have offset at"
+               << lngth << " " << sizeof(U) << "-byte words.",
+               offset*sizeof(U) != m.offset*sizeof(T));
   }
 
   memory(const memory<T> &m)=default;
@@ -177,24 +166,15 @@ class memory {
 
     const ptrdiff_t cnt = (count==-1) ? lngth : count;
 
-    if (cnt < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Cannot have negative count ("
-         << cnt << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if (offset_ < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Cannot have negative offset ("
-         << offset_ << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if(static_cast<size_t>(cnt)+offset_ > lngth) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Destination memory has size [" << lngth << "],"
-         << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyFrom Cannot have negative count ("
+               << cnt << ")",
+               cnt < 0);
+    LIBP_ABORT("libp::memory::copyFrom Cannot have negative offset ("
+               << offset_ << ")",
+               offset_ < 0);
+    LIBP_ABORT("libp::memory::copyFrom Destination memory has size [" << lngth << "],"
+               << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt)+offset_ > lngth);
 
     std::copy(src,
               src+cnt,
@@ -207,30 +187,18 @@ class memory {
                 const ptrdiff_t offset_ = 0) {
     const ptrdiff_t cnt = (count==-1) ? lngth : count;
 
-    if (cnt < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Cannot have negative count ("
-         << cnt << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if (offset_ < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Cannot have negative offset ("
-         << offset_ << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if(static_cast<size_t>(cnt) > src.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Source memory has size [" << src.length() << "],"
-         << " trying to access [0, " << static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
-    if(static_cast<size_t>(cnt)+offset_ > lngth) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Destination memory has size [" << lngth << "],"
-         << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyFrom Cannot have negative count ("
+               << cnt << ")",
+               cnt < 0);
+    LIBP_ABORT("libp::memory::copyFrom Cannot have negative offset ("
+               << offset_ << ")",
+               offset_ < 0);
+    LIBP_ABORT("libp::memory::copyFrom Source memory has size [" << src.length() << "],"
+               << " trying to access [0, " << static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt) > src.length());
+    LIBP_ABORT("libp::memory::copyFrom Destination memory has size [" << lngth << "],"
+               << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt)+offset_ > lngth);
 
     std::copy(src.ptr(),
               src.ptr()+cnt,
@@ -243,24 +211,15 @@ class memory {
               const ptrdiff_t offset_ = 0) const {
     const ptrdiff_t cnt = (count==-1) ? lngth : count;
 
-    if (cnt < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Cannot have negative count ("
-         << cnt << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if (offset_ < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Cannot have negative offset ("
-         << offset_ << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if(static_cast<size_t>(cnt)+offset_ > lngth) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Source memory has size [" << lngth << "],"
-         << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyTo Cannot have negative count ("
+               << cnt << ")",
+               cnt < 0);
+    LIBP_ABORT("libp::memory::copyTo Cannot have negative offset ("
+               << offset_ << ")",
+               offset_ < 0);
+    LIBP_ABORT("libp::memory::copyTo Source memory has size [" << lngth << "],"
+               << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt)+offset_ > lngth);
 
     std::copy(ptr()+offset_,
               ptr()+offset_+cnt,
@@ -273,30 +232,18 @@ class memory {
               const ptrdiff_t offset_ = 0) const {
     const ptrdiff_t cnt = (count==-1) ? lngth : count;
 
-    if (cnt < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Cannot have negative count ("
-         << cnt << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if (offset_ < 0) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Cannot have negative offset ("
-         << offset_ << ")";
-      LIBP_ABORT(ss.str());
-    }
-    if(static_cast<size_t>(cnt) > dest.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
-         << " trying to access [0, " << cnt << "]";
-      LIBP_ABORT(ss.str());
-    }
-    if(static_cast<size_t>(cnt)+offset_ > lngth) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Source memory has size [" << lngth << "],"
-         << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyTo Cannot have negative count ("
+               << cnt << ")",
+               cnt < 0);
+    LIBP_ABORT("libp::memory::copyTo Cannot have negative offset ("
+               << offset_ << ")",
+               offset_ < 0);
+    LIBP_ABORT("libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
+               << " trying to access [0, " << cnt << "]",
+               static_cast<size_t>(cnt) > dest.length());
+    LIBP_ABORT("libp::memory::copyTo Source memory has size [" << lngth << "],"
+               << " trying to access [" << offset_ << ", " << offset_+static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt)+offset_ > lngth);
 
     std::copy(ptr()+offset_,
               ptr()+offset_+cnt,
@@ -390,12 +337,9 @@ class deviceMemory: public occa::memory {
 
     if (cnt==0) return;
 
-    if(static_cast<size_t>(cnt) > src.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Source memory has size [" << src.length() << "],"
-         << " trying to access [0, " << static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyFrom Source memory has size [" << src.length() << "],"
+               << " trying to access [0, " << static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt) > src.length());
 
     occa::memory::copyFrom(src.ptr(),
                            cnt*sizeof(T),
@@ -408,12 +352,9 @@ class deviceMemory: public occa::memory {
 
     if (length()==0) return;
 
-    if(length() > src.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Source memory has size [" << src.length() << "],"
-         << " trying to access [0, " << length() << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyFrom Source memory has size [" << src.length() << "],"
+               << " trying to access [0, " << length() << "]",
+               length() > src.length());
 
     occa::memory::copyFrom(src.ptr(),
                            length()*sizeof(T),
@@ -458,12 +399,9 @@ class deviceMemory: public occa::memory {
 
     if (cnt==0) return;
 
-    if(static_cast<size_t>(cnt) > dest.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
-         << " trying to access [0, " << static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
+               << " trying to access [0, " << static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt) > dest.length());
 
     occa::memory::copyTo(dest.ptr(),
                          cnt*sizeof(T),
@@ -476,12 +414,9 @@ class deviceMemory: public occa::memory {
 
     if (length()==0) return;
 
-    if(length() > dest.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
-         << " trying to access [0, " << length() << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
+               << " trying to access [0, " << length() << "]",
+               length() > dest.length());
 
     occa::memory::copyTo(dest.ptr(),
                          length()*sizeof(T),
@@ -582,12 +517,9 @@ class pinnedMemory: public occa::memory {
 
     if (cnt==0) return;
 
-    if(static_cast<size_t>(cnt) > src.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Source memory has size [" << src.length() << "],"
-         << " trying to access [0, " << static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyFrom Source memory has size [" << src.length() << "],"
+               << " trying to access [0, " << static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt) > src.length());
 
     occa::memory::copyFrom(src.ptr(),
                            cnt*sizeof(T),
@@ -600,12 +532,9 @@ class pinnedMemory: public occa::memory {
 
     if (length()==0) return;
 
-    if(length() > src.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyFrom Source memory has size [" << src.length() << "],"
-         << " trying to access [0, " << length() << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyFrom Source memory has size [" << src.length() << "],"
+               << " trying to access [0, " << length() << "]",
+               length() > src.length());
 
     occa::memory::copyFrom(src.ptr(),
                            length()*sizeof(T),
@@ -678,12 +607,9 @@ class pinnedMemory: public occa::memory {
 
     if (cnt==0) return;
 
-    if(static_cast<size_t>(cnt) > dest.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
-         << " trying to access [0, " << static_cast<size_t>(cnt) << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
+               << " trying to access [0, " << static_cast<size_t>(cnt) << "]",
+               static_cast<size_t>(cnt) > dest.length());
 
     occa::memory::copyTo(dest.ptr(),
                          cnt*sizeof(T),
@@ -696,12 +622,9 @@ class pinnedMemory: public occa::memory {
 
     if (length()==0) return;
 
-    if(length() > dest.length()) {
-      std::stringstream ss;
-      ss << "libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
-         << " trying to access [0, " << length() << "]";
-      LIBP_ABORT(ss.str());
-    }
+    LIBP_ABORT("libp::memory::copyTo Destination memory has size [" << dest.length() << "],"
+               << " trying to access [0, " << length() << "]",
+               length() > dest.length());
 
     occa::memory::copyTo(dest.ptr(),
                          length()*sizeof(T),

@@ -67,17 +67,17 @@ memory<hlong> MakeIds(dawgsSettings_t &settings) {
               rank);
 
   //get polynomial degree
-  int N;
+  int N=0;
   settings.getSetting("POLYNOMIAL DEGREE", N);
 
   //get global size from settings
-  int NX, NY, NZ;
+  int NX=0, NY=0, NZ=0;
   settings.getSetting("BOX NX", NX);
   settings.getSetting("BOX NY", NY);
   settings.getSetting("BOX NZ", NZ);
 
   //get local size from settings
-  int nx, ny, nz;
+  int nx=0, ny=0, nz=0;
   settings.getSetting("LOCAL BOX NX", nx);
   settings.getSetting("LOCAL BOX NY", ny);
   settings.getSetting("LOCAL BOX NZ", nz);

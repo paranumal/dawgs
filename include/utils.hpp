@@ -28,6 +28,15 @@ SOFTWARE.
 #define UTILS_HPP
 
 #include <string>
+#include <cstring>
+#include <ostream>
+#include <iostream>
+#include <cstddef>
+#include <memory>
+#include <algorithm>
+#include <typeinfo>
+#include <cmath>
+#include <occa.hpp>
 #include "types.h"
 
 namespace libp {
@@ -45,30 +54,61 @@ using stream_t = occa::stream;
 #  define __PRETTY_FUNCTION__ __FUNCTION__
 #endif
 
-#define LIBP_ABORT2(filename, function, line, message)              \
-  {                                                                 \
-    std::string banner = "---[ Error ]";                            \
-    std::cerr << '\n'                                               \
-       << std::string(74, '=') << '\n'                              \
-       << banner << std::string(74 - banner.size(), '-') << '\n'    \
-       << "    File     : " << filename << '\n'                     \
-       << "    Line     : " << line     << '\n'                     \
-       << "    Function : " << function << '\n'                     \
-       << "    Message  : " << message  << '\n'                     \
-       << std::string(74, '=') << '\n';                             \
-    MPI_Abort(MPI_COMM_WORLD,LIBP_ERROR);                           \
-  }
-#define LIBP_ABORT(message) LIBP_ABORT2(__FILE__, __PRETTY_FUNCTION__, __LINE__, message)
+#define LIBP_TEMPLATE_CHECK(checkFunction, expr, filename, function, line, message) \
+  do {                                                                  \
+    const bool isErr = (bool) (expr);                                   \
+    if (isErr) {                                                        \
+      std::stringstream _check_ss;                                      \
+      _check_ss << message;                                             \
+      checkFunction(filename, function, line, _check_ss.str());         \
+    }                                                                   \
+  } while (false)
 
-#define LIBP_WARNING(message)                                       \
-  {                                                                 \
-    std::string banner = "---[ Warning ]";                          \
-    std::cerr << '\n'                                               \
-       << std::string(74, '=') << '\n'                              \
-       << banner << std::string(74 - banner.size(), '-') << '\n'    \
-       << "     " << message  << '\n'                               \
-       << std::string(74, '=') << '\n';                             \
-  }
+#define LIBP_ABORT3(expr, filename, function, line, message) LIBP_TEMPLATE_CHECK(libp::abort, expr, filename, function, line, message)
+#define LIBP_ABORT2(expr, filename, function, line, message) LIBP_ABORT3(expr, filename, function, line, message)
+#define LIBP_ABORT(message, expr)                            LIBP_ABORT2(expr, __FILE__, __PRETTY_FUNCTION__, __LINE__, message)
+
+#define LIBP_WARNING3(expr, filename, function, line, message) LIBP_TEMPLATE_CHECK(libp::warn, expr, filename, function, line, message)
+#define LIBP_WARNING2(expr, filename, function, line, message) LIBP_WARNING3(expr, filename, function, line, message)
+#define LIBP_WARNING(message, expr)                            LIBP_WARNING2(expr, __FILE__, __PRETTY_FUNCTION__, __LINE__, message)
+
+#define LIBP_FORCE_ABORT(message)   LIBP_ABORT(message, true)
+#define LIBP_FORCE_WARNING(message) LIBP_WARNING(message, true)
+
+class exception : public std::exception {
+ public:
+  const std::string header;
+  const std::string filename;
+  const std::string function;
+  const std::string message;
+  const int line;
+
+  std::string exceptionMessage;
+
+  exception(const std::string &header_,
+            const std::string &filename_,
+            const std::string &function_,
+            const int line_,
+            const std::string &message_);
+  ~exception() throw();
+
+  const char* what() const throw();
+  std::string toString() const;
+  std::string location() const;
+};
+
+std::ostream& operator << (std::ostream& out,
+                           const exception &exc);
+
+void abort(const std::string &filename,
+           const std::string &function,
+           const int line,
+           const std::string &message);
+
+void warn(const std::string &filename,
+          const std::string &function,
+          const int line,
+          const std::string &message);
 
 } //namespace libp
 

@@ -454,24 +454,15 @@ void ogsOperator_t::setupRowBlocks() {
 
   for (dlong i=0;i<NrowsT;i++) {
     const dlong rowSizeN  = rowStartsN[i+1]-rowStartsN[i];
-
-    if (rowSizeN > gatherNodesPerBlock) {
-      //this row is pathalogically big. We can't currently run this
-      std::stringstream ss;
-      ss << "Multiplicity of global node id: " << i
-         << " in ogsOperator_t::setupRowBlocks is too large.";
-      LIBP_ABORT(ss.str())
-    }
-
     const dlong rowSizeT  = rowStartsT[i+1]-rowStartsT[i];
 
-    if (rowSizeT > gatherNodesPerBlock) {
-      //this row is pathalogically big. We can't currently run this
-      std::stringstream ss;
-      ss << "Multiplicity of global node id: " << i
-         << " in ogsOperator_t::setupRowBlocks is too large.";
-      LIBP_ABORT(ss.str())
-    }
+    //this row is pathalogically big. We can't currently run this
+    LIBP_ABORT("Multiplicity of global node id: " << i
+               << " in ogsOperator_t::setupRowBlocks is too large.",
+               rowSizeN > gatherNodesPerBlock);
+    LIBP_ABORT("Multiplicity of global node id: " << i
+               << " in ogsOperator_t::setupRowBlocks is too large.",
+               rowSizeT > gatherNodesPerBlock);
 
     if (blockSumN+rowSizeN > gatherNodesPerBlock) { //adding this row will exceed the nnz per block
       NrowBlocksN++; //count the previous block

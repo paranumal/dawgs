@@ -90,9 +90,7 @@ void platform_t::DeviceConfig(){
       //check for over-subscribing devices
       int deviceCount = occa::getDeviceCount(mode);
       if (deviceCount>0 && localRank>=deviceCount) {
-        std::stringstream ss;
-        ss << "Rank " << rank() << " oversubscribing device " << device_id%deviceCount << " on node \"" << hostname.ptr() << "\"";
-        LIBP_WARNING(ss.str());
+        LIBP_FORCE_WARNING("Rank " << rank() << " oversubscribing device " << device_id%deviceCount << " on node \"" << hostname.ptr() << "\"");
         device_id = device_id%deviceCount;
       }
     }
@@ -106,19 +104,18 @@ void platform_t::DeviceConfig(){
   /*Use lscpu to determine core and socket counts */
   FILE *pipeCores   = popen("lscpu | grep \"Core(s) per socket\" | awk '{print $4}'", "r");
   FILE *pipeSockets = popen("lscpu | grep \"Socket(s)\" | awk '{print $2}'", "r");
-  if (!pipeCores || !pipeSockets) {
-    LIBP_ABORT("popen() failed!");
-  }
+  LIBP_ABORT("popen() failed!",
+             !pipeCores || !pipeSockets);
 
   std::array<char, 128> buffer;
-  if (!fgets(buffer.data(), buffer.size(), pipeCores)) { //read to end of line
-    LIBP_ABORT("Error reading core count")
-  }
+  //read to end of line
+  LIBP_ABORT("Error reading core count",
+             !fgets(buffer.data(), buffer.size(), pipeCores));
   int Ncores = std::stoi(buffer.data());
 
-  if (!fgets(buffer.data(), buffer.size(), pipeSockets)) { //read to end of line
-    LIBP_ABORT("Error reading core count")
-  }
+  //read to end of line
+  LIBP_ABORT("Error reading core count",
+             !fgets(buffer.data(), buffer.size(), pipeSockets));
   int Nsockets = std::stoi(buffer.data());
 
   pclose(pipeCores);
@@ -144,11 +141,8 @@ void platform_t::DeviceConfig(){
       Nthreads = std::stoi(ompNumThreads);
     }
   }
-  if (Nthreads*localSize>NcoresPerNode) {
-    std::stringstream ss;
-    ss << "Rank " << rank() << " oversubscribing CPU on node \"" << hostname.ptr() << "\"";
-    LIBP_WARNING(ss.str());
-  }
+  LIBP_WARNING("Rank " << rank() << " oversubscribing CPU on node \"" << hostname.ptr() << "\"",
+               Nthreads*localSize>NcoresPerNode);
   omp_set_num_threads(Nthreads);
   // omp_set_num_threads(1);
 
