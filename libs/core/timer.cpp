@@ -24,34 +24,37 @@ SOFTWARE.
 
 */
 
-#ifndef DAWGS_HPP
-#define DAWGS_HPP 1
-
-#include "core.hpp"
-#include "platform.hpp"
-#include "ogs.hpp"
 #include "timer.hpp"
 
-#define DDAWGS DAWGS_DIR
+namespace libp {
 
-using namespace libp;
+/* Host time*/
+timePoint_t Time() {
+  return std::chrono::high_resolution_clock::now();
+}
 
-class dawgsSettings_t: public settings_t {
-public:
-  dawgsSettings_t(const int argc, char** argv, comm_t _comm);
-  void report();
-};
+/* Host time after global sync*/
+timePoint_t GlobalTime(comm_t comm) {
+  comm.Barrier();
+  return Time();
+}
 
-//Setup a gslib struct
-void *gsSetup(MPI_Comm meshComm,
-              dlong NuniqueBases,
-              hlong *gatherGlobalNodes,
-              int unique, int verbose);
+/* Host time after platform sync*/
+timePoint_t PlatformTime(platform_t &platform) {
+  platform.finish();
+  return Time();
+}
 
-void gsGatherScatter(void* v, void *gsh, int transpose);
-void gsGatherScatterVec(void* v, int K, void *gsh, int transpose);
+/* Host time after platform sync*/
+timePoint_t GlobalPlatformTime(platform_t &platform) {
+  platform.finish();
+  platform.comm.Barrier();
+  return Time();
+}
 
-void gsFree(void* gs);
+/*Time between time points, in seconds*/
+double ElapsedTime(const timePoint_t start, const timePoint_t end) {
+  return std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/(1.0e6);
+}
 
-#endif
-
+} //namespace libp

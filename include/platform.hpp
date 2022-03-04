@@ -162,6 +162,10 @@ public:
     return iplatform->props;
   }
 
+  void finish() {
+    device.finish();
+  }
+
   const int rank() const {
     return comm.rank();
   }

@@ -24,34 +24,33 @@ SOFTWARE.
 
 */
 
-#ifndef DAWGS_HPP
-#define DAWGS_HPP 1
+#ifndef LIBP_TIMER_HPP
+#define LIBP_TIMER_HPP
 
 #include "core.hpp"
+#include "comm.hpp"
 #include "platform.hpp"
-#include "ogs.hpp"
-#include "timer.hpp"
+#include <chrono>
 
-#define DDAWGS DAWGS_DIR
+namespace libp {
 
-using namespace libp;
+using timePoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
-class dawgsSettings_t: public settings_t {
-public:
-  dawgsSettings_t(const int argc, char** argv, comm_t _comm);
-  void report();
-};
+/* Host time*/
+timePoint_t Time();
 
-//Setup a gslib struct
-void *gsSetup(MPI_Comm meshComm,
-              dlong NuniqueBases,
-              hlong *gatherGlobalNodes,
-              int unique, int verbose);
+/* Host time after global sync*/
+timePoint_t GlobalTime(comm_t comm);
 
-void gsGatherScatter(void* v, void *gsh, int transpose);
-void gsGatherScatterVec(void* v, int K, void *gsh, int transpose);
+/* Host time after platform sync*/
+timePoint_t PlatformTime(platform_t &platform);
 
-void gsFree(void* gs);
+/* Host time after platform sync*/
+timePoint_t GlobalPlatformTime(platform_t &platform);
+
+/*Time between time points, in seconds*/
+double ElapsedTime(const timePoint_t start, const timePoint_t end);
+
+} //namespace libp
 
 #endif
-

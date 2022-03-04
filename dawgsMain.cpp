@@ -142,73 +142,174 @@ memory<hlong> MakeIds(dawgsSettings_t &settings) {
   return ids;
 }
 
-/*
-void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
-                     occa::memory &o_q, ogs::ogs_t &ogs,
-                     const ogs::ogs_method method,
-                     bool gpu_aware, bool overlap, MPI_Comm comm) {
 
-  int rank = ogs.platform.rank;
-  int size = ogs.platform.size;
+void PerformanceTest(platform_t &platform,
+                     comm_t comm,
+                     const int N,
+                     memory<hlong> ids,
+                     ogs::Method method) {
+
+  int rank = comm.rank();
+  int size = comm.size();
+
+  int K = 1;
+
+  dlong Ndofs = ids.length();
+
+  //make an array
+  memory<dfloat> q(K*Ndofs);
+
+  /*Create rng*/
+  std::mt19937 RNG = std::mt19937(comm.rank());
+  std::uniform_real_distribution<> distrib(-0.25, 0.25);
+
+  //fill with random numbers
+  for (dlong n=0;n<K*Ndofs;n++) q[n]=distrib(RNG);
+
+  //make a device array o_q, copying q from host on creation
+  deviceMemory<dfloat> o_q = platform.malloc<dfloat>(K*Ndofs, q);
+
+  bool verbose=true;
+  bool unique = false;
+  ogs::ogs_t ogs;
+  ogs.Setup(Ndofs, ids, comm, ogs::Unsigned,
+              method, unique, verbose, platform);
+
+  unique = true;
+  ogs::ogs_t sogs;
+  sogs.Setup(Ndofs, ids, comm, ogs::Signed,
+               method, unique, verbose, platform);
+
+  deviceMemory<dfloat> o_gq = platform.malloc<dfloat>(K*sogs.Ngather);
+  memory<dfloat> gq(K*sogs.Ngather);
 
   int Nwarmup = 10;
-  MPI_Barrier(comm);
+  int Ntests = 20;
+  timePoint_t start, end;
+  double elapsedTime;
+
   for (int n=0;n<Nwarmup;n++) {
-    ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
-    if (Nvectors) o_a.copyTo(o_b, Nlocal*Nvectors*sizeof(dfloat), 0, 0, "async: true");
-    ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
-    ogs.platform.device.finish();
+    ogs.GatherScatter(q, K, ogs::Add, ogs::Sym);
+  }
+  start = GlobalPlatformTime(platform);
+  for (int n=0;n<Ntests;n++) {
+    ogs.GatherScatter(q, K, ogs::Add, ogs::Sym);
+  }
+  end = GlobalPlatformTime(platform);
+  elapsedTime = ElapsedTime(start, end)/Ntests;
+
+  if (rank==0) {
+    std::cout << "Host GatherScatter:   Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << ogs.NgatherGlobal << ", ";
+    std::cout << "Max Local DOFS = " << Ndofs << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsedTime << " s, ";
+    std::cout << "DOFS/s = " <<  (ogs.NgatherGlobal)/elapsedTime << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (ogs.NgatherGlobal)/(elapsedTime*size) << std::endl;
   }
 
-  int n_iter = 50;
-  dfloat starttime, endtime;
+  for (int n=0;n<Nwarmup;n++) {
+    ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+  }
+  start = GlobalPlatformTime(platform);
+  for (int n=0;n<Ntests;n++) {
+    ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+  }
+  end = GlobalPlatformTime(platform);
+  elapsedTime = ElapsedTime(start, end)/Ntests;
 
-  // std::vector<int> Nvec{0, 1, 3, 7};
-  std::vector<int> Nvec{0};
+  if (rank==0) {
+    std::cout << "Device GatherScatter: Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << ogs.NgatherGlobal << ", ";
+    std::cout << "Max Local DOFS = " << Ndofs << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsedTime << " s, ";
+    std::cout << "DOFS/s = " <<  (ogs.NgatherGlobal)/elapsedTime << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (ogs.NgatherGlobal)/(elapsedTime*size) << std::endl;
+  }
 
-  for (int m : Nvec) {
-    MPI_Barrier(comm);
-    starttime = MPI_Wtime();
 
-    for (int n=0;n<n_iter;n++) {
-      ogs.GatherScatterStart(o_q, method, gpu_aware, overlap);
-      if (Nvectors) o_a.copyTo(o_b, Nlocal*m*sizeof(dfloat), 0, 0, "async: true");
-      ogs.GatherScatterFinish(o_q, method, gpu_aware, overlap);
-      ogs.platform.device.finish();
-    }
+  for (int n=0;n<Nwarmup;n++) {
+    sogs.Gather(gq, q, K, ogs::Add, ogs::Trans);
+  }
+  start = GlobalPlatformTime(platform);
+  for (int n=0;n<Ntests;n++) {
+    sogs.Gather(gq, q, K, ogs::Add, ogs::Trans);
+  }
+  end = GlobalPlatformTime(platform);
+  elapsedTime = ElapsedTime(start, end)/Ntests;
 
-    //platform.device.finish();
-    MPI_Barrier(comm);
-    endtime = MPI_Wtime();
+  if (rank==0) {
+    std::cout << "Host Gather:          Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << ogs.NgatherGlobal << ", ";
+    std::cout << "Max Local DOFS = " << Ndofs << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsedTime << " s, ";
+    std::cout << "DOFS/s = " <<  (ogs.NgatherGlobal)/elapsedTime << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (ogs.NgatherGlobal)/(elapsedTime*size) << std::endl;
+  }
 
-    double elapsed = (endtime-starttime)*1000/n_iter;
+  for (int n=0;n<Nwarmup;n++) {
+    sogs.Gather(o_gq, o_q, K, ogs::Add, ogs::Trans);
+  }
+  start = GlobalPlatformTime(platform);
+  for (int n=0;n<Ntests;n++) {
+    sogs.Gather(o_gq, o_q, K, ogs::Add, ogs::Trans);
+  }
+  end = GlobalPlatformTime(platform);
+  elapsedTime = ElapsedTime(start, end)/Ntests;
 
-    if (rank==0) {
-      if (method==ogs::ogs_all_reduce)
-        std::cout << "AR ";
-      else if (method==ogs::ogs_pairwise)
-        std::cout << "PW ";
-      else
-        std::cout << "CR ";
+  if (rank==0) {
+    std::cout << "Device Gather:        Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << ogs.NgatherGlobal << ", ";
+    std::cout << "Max Local DOFS = " << Ndofs << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsedTime << " s, ";
+    std::cout << "DOFS/s = " <<  (ogs.NgatherGlobal)/elapsedTime << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (ogs.NgatherGlobal)/(elapsedTime*size) << std::endl;
+  }
 
-      if (gpu_aware)
-        std::cout << ", GPU-aware ";
+  for (int n=0;n<Nwarmup;n++) {
+    sogs.Scatter(q, gq, K, ogs::NoTrans);
+  }
+  start = GlobalPlatformTime(platform);
+  for (int n=0;n<Ntests;n++) {
+    sogs.Scatter(q, gq, K, ogs::NoTrans);
+  }
+  end = GlobalPlatformTime(platform);
+  elapsedTime = ElapsedTime(start, end)/Ntests;
 
-      if (overlap)
-        std::cout << ", Overlap ";
+  if (rank==0) {
+    std::cout << "Host Scatter:         Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << ogs.NgatherGlobal << ", ";
+    std::cout << "Max Local DOFS = " << Ndofs << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsedTime << " s, ";
+    std::cout << "DOFS/s = " <<  (ogs.NgatherGlobal)/elapsedTime << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (ogs.NgatherGlobal)/(elapsedTime*size) << std::endl;
+  }
 
-      std::cout << ": Ranks = " << size << ", ";
-      std::cout << "Global DOFS = " << Ndofs << ", ";
-      std::cout << "Max Local DOFS = " << Nlocal << ", ";
-      std::cout << "Degree = " << N << ", ";
-      std::cout << "Nvectors = " << m << ", ";
-      std::cout << "Time taken = " << elapsed << " ms, ";
-      std::cout << "DOFS/s = " <<  ((1+m)*Ndofs*1000.0)/elapsed << ", ";
-      std::cout << "DOFS/(s*rank) = " <<  ((1+m)*Ndofs*1000.0)/(elapsed*size) << std::endl;
-    }
+  for (int n=0;n<Nwarmup;n++) {
+    sogs.Scatter(o_q, o_gq, K, ogs::NoTrans);
+  }
+  start = GlobalPlatformTime(platform);
+  for (int n=0;n<Ntests;n++) {
+    sogs.Scatter(o_q, o_gq, K, ogs::NoTrans);
+  }
+  end = GlobalPlatformTime(platform);
+  elapsedTime = ElapsedTime(start, end)/Ntests;
+
+  if (rank==0) {
+    std::cout << "Device Scatter:       Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << ogs.NgatherGlobal << ", ";
+    std::cout << "Max Local DOFS = " << Ndofs << ", ";
+    std::cout << "Degree = " << N << ", ";
+    std::cout << "Time taken = " << elapsedTime << " s, ";
+    std::cout << "DOFS/s = " <<  (ogs.NgatherGlobal)/elapsedTime << ", ";
+    std::cout << "DOFS/(s*rank) = " <<  (ogs.NgatherGlobal)/(elapsedTime*size) << std::endl;
   }
 }
-*/
+
 
 void CorrectnessTest(platform_t &platform,
                      comm_t comm,
@@ -314,59 +415,6 @@ void CorrectnessTest(platform_t &platform,
   gsFree(gsHandle);
 }
 
-#if 0
-  } else {
-    /*************************
-     * Performance Test
-     *************************/
-    int64_t Ndofs = ((int64_t) Np)*NX*NY*NZ;
-    int Nlocal = Np*Nelements;
-
-    //All to all
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, false, comm);
-
-    //Pairwise
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, false, comm);
-
-    //Crystal Router
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, false, comm);
-
-    //With Halo kernel overlap:
-
-    //All to all
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, false, true, comm);
-
-    //Pairwise
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, false, true, comm);
-
-    //Crystal Router
-    PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, false, true, comm);
-
-    if (gpu_aware) {
-      //All to all
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, false, comm);
-
-      //Pairwise
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, false, comm);
-
-      //Crystal Router
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, false, comm);
-
-      //With Halo kernel overlap:
-
-      //All to all
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_all_reduce, true, true, comm);
-
-      //Pairwise
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_pairwise, true, true, comm);
-
-      //Crystal Router
-      PerformanceTest(N, Ndofs, Nlocal, o_q, ogs, ogs::ogs_crystal_router, true, true, comm);
-    }
-  }
-#endif
-
-
 int main(int argc, char **argv){
 
   // start up MPI
@@ -394,18 +442,24 @@ int main(int argc, char **argv){
     check = settings.compareSetting("CORRECTNESS CHECK", "TRUE");
 
     if (!sweep) {
+      //get polynomial degree
+      int N;
+      settings.getSetting("POLYNOMIAL DEGREE", N);
 
       memory<hlong> ids;
 
       if (check) {
         if (settings.compareSetting("METHOD", "Pairwise")) {
           if (comm.rank()==0) std::cout << " ---- Pairwise ----" << std::endl;
+          ids = MakeIds(settings);
           CorrectnessTest(platform, comm, ids, ogs::Pairwise);
         } else if (settings.compareSetting("METHOD", "Alltoall")) {
           if (comm.rank()==0) std::cout << " ---- Alltoall ----" << std::endl;
+          ids = MakeIds(settings);
           CorrectnessTest(platform, comm, ids, ogs::AllToAll);
           if (comm.rank()==0) std::cout << " ---- CrystalRouter ----" << std::endl;
         } else if (settings.compareSetting("METHOD", "CrystalRouter")) {
+          ids = MakeIds(settings);
           CorrectnessTest(platform, comm, ids, ogs::CrystalRouter);
         } else {
           if (comm.rank()==0) std::cout << " ---- Pairwise ----" << std::endl;
@@ -420,6 +474,33 @@ int main(int argc, char **argv){
           if (comm.rank()==0) std::cout << " ---- Auto ----" << std::endl;
           ids = MakeIds(settings);
           CorrectnessTest(platform, comm, ids, ogs::Auto);
+        }
+      } else {
+        if (settings.compareSetting("METHOD", "Pairwise")) {
+          if (comm.rank()==0) std::cout << " ---- Pairwise ----" << std::endl;
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::Pairwise);
+        } else if (settings.compareSetting("METHOD", "Alltoall")) {
+          if (comm.rank()==0) std::cout << " ---- Alltoall ----" << std::endl;
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::AllToAll);
+          if (comm.rank()==0) std::cout << " ---- CrystalRouter ----" << std::endl;
+        } else if (settings.compareSetting("METHOD", "CrystalRouter")) {
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::CrystalRouter);
+        } else {
+          if (comm.rank()==0) std::cout << " ---- Pairwise ----" << std::endl;
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::Pairwise);
+          if (comm.rank()==0) std::cout << " ---- Alltoall ----" << std::endl;
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::AllToAll);
+          if (comm.rank()==0) std::cout << " ---- CrystalRouter ----" << std::endl;
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::CrystalRouter);
+          if (comm.rank()==0) std::cout << " ---- Auto ----" << std::endl;
+          ids = MakeIds(settings);
+          PerformanceTest(platform, comm, N, ids, ogs::Auto);
         }
       }
 
@@ -444,7 +525,34 @@ int main(int argc, char **argv){
           settings.changeSetting("LOCAL BOX NY", std::to_string(NN));
           settings.changeSetting("LOCAL BOX NZ", std::to_string(NN));
 
-          // Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
+          memory<hlong> ids;
+
+          if (settings.compareSetting("METHOD", "Pairwise")) {
+            if (comm.rank()==0) std::cout << " ---- Pairwise ----" << std::endl;
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::Pairwise);
+          } else if (settings.compareSetting("METHOD", "Alltoall")) {
+            if (comm.rank()==0) std::cout << " ---- Alltoall ----" << std::endl;
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::AllToAll);
+            if (comm.rank()==0) std::cout << " ---- CrystalRouter ----" << std::endl;
+          } else if (settings.compareSetting("METHOD", "CrystalRouter")) {
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::CrystalRouter);
+          } else {
+            if (comm.rank()==0) std::cout << " ---- Pairwise ----" << std::endl;
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::Pairwise);
+            if (comm.rank()==0) std::cout << " ---- Alltoall ----" << std::endl;
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::AllToAll);
+            if (comm.rank()==0) std::cout << " ---- CrystalRouter ----" << std::endl;
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::CrystalRouter);
+            if (comm.rank()==0) std::cout << " ---- Auto ----" << std::endl;
+            ids = MakeIds(settings);
+            PerformanceTest(platform, comm, N, ids, ogs::Auto);
+          }
         }
       }
     }
