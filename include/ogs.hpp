@@ -29,9 +29,9 @@ SOFTWARE.
 
   The code
 
-    MPI_Comm comm;
+    comm_t comm;
     dlong N;
-    hlong id[N];    // the hlong and dlong types are defined in "types.h"
+    memory<hlong> id(N);    // the hlong and dlong types are defined in "types.h"
     bool verbose;
     bool unique;
     ogs_t ogs(platform);
@@ -223,7 +223,7 @@ public:
 
   void Setup(const dlong _N,
              memory<hlong> ids,
-             MPI_Comm _comm,
+             comm_t _comm,
              const Kind _kind,
              const Method method,
              const bool _unique,
@@ -357,7 +357,7 @@ public:
 
   void Setup(const dlong _N,
              memory<hlong> ids,
-             MPI_Comm _comm,
+             comm_t _comm,
              const Method method,
              const bool verbose,
              platform_t& _platform);

@@ -39,9 +39,8 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   double start, end;
   double localTime, sumTime, minTime, maxTime;
 
-  int rank, size;
-  MPI_Comm_rank(exchange->comm, &rank);
-  MPI_Comm_size(exchange->comm, &size);
+  comm_t& comm = exchange->comm;
+  int size = comm.size();
 
   pinnedMemory<dfloat>   buf = exchange->h_workspace;
   deviceMemory<dfloat> o_buf = exchange->o_workspace;
@@ -97,9 +96,9 @@ static void DeviceExchangeTest(ogsExchange_t* exchange, double time[3]) {
   end = MPI_Wtime();
 
   localTime = (end-start)/Nhot;
-  MPI_Allreduce(&localTime, &sumTime, 1, MPI_DOUBLE, MPI_SUM, exchange->comm);
-  MPI_Allreduce(&localTime, &maxTime, 1, MPI_DOUBLE, MPI_MAX, exchange->comm);
-  MPI_Allreduce(&localTime, &minTime, 1, MPI_DOUBLE, MPI_MIN, exchange->comm);
+  comm.Allreduce(localTime, sumTime, comm_t::Sum);
+  comm.Allreduce(localTime, maxTime, comm_t::Max);
+  comm.Allreduce(localTime, minTime, comm_t::Min);
 
   time[0] = sumTime/size; //avg
   time[1] = minTime;      //min
@@ -112,9 +111,8 @@ static void HostExchangeTest(ogsExchange_t* exchange, double time[3]) {
   double start, end;
   double localTime, sumTime, minTime, maxTime;
 
-  int rank, size;
-  MPI_Comm_rank(exchange->comm, &rank);
-  MPI_Comm_size(exchange->comm, &size);
+  comm_t& comm = exchange->comm;
+  int size = comm.size();
 
   pinnedMemory<dfloat> buf = exchange->h_workspace;
 
@@ -133,9 +131,9 @@ static void HostExchangeTest(ogsExchange_t* exchange, double time[3]) {
   end = MPI_Wtime();
 
   localTime = (end-start)/Nhot;
-  MPI_Allreduce(&localTime, &sumTime, 1, MPI_DOUBLE, MPI_SUM, exchange->comm);
-  MPI_Allreduce(&localTime, &maxTime, 1, MPI_DOUBLE, MPI_MAX, exchange->comm);
-  MPI_Allreduce(&localTime, &minTime, 1, MPI_DOUBLE, MPI_MIN, exchange->comm);
+  comm.Allreduce(localTime, sumTime, comm_t::Sum);
+  comm.Allreduce(localTime, maxTime, comm_t::Max);
+  comm.Allreduce(localTime, minTime, comm_t::Min);
 
   time[0] = sumTime/size; //avg
   time[1] = minTime;      //min
@@ -145,13 +143,13 @@ static void HostExchangeTest(ogsExchange_t* exchange, double time[3]) {
 ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
                                     libp::memory<parallelNode_t> &sharedNodes,
                                     ogsOperator_t& _gatherHalo,
-                                    MPI_Comm _comm,
+                                    comm_t _comm,
                                     platform_t &_platform,
                                     const int verbose) {
 
   int rank, size;
-  MPI_Comm_rank(comm, &rank);
-  MPI_Comm_size(comm, &size);
+  rank = comm.rank();
+  size = comm.size();
 
   if (size==1) return new ogsPairwise_t(Nshared, sharedNodes,
                                         _gatherHalo, dataStream,
@@ -227,7 +225,6 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
   ogsExchange_t* alltoall = new ogsAllToAll_t(Nshared, sharedNodes,
                                            _gatherHalo, dataStream,
                                            comm, platform);
-
   //standard copy to host - exchange - copy back to device
   alltoall->gpu_aware=false;
 
@@ -278,9 +275,9 @@ ogsExchange_t* ogsBase_t::AutoSetup(dlong Nshared,
   /********************************
    * Crystal Router
    ********************************/
-  ogsExchange_t* crystal = new ogsAllToAll_t(Nshared, sharedNodes,
-                                           _gatherHalo, dataStream,
-                                           comm, platform);
+  ogsExchange_t* crystal = new ogsCrystalRouter_t(Nshared, sharedNodes,
+                                                 _gatherHalo, dataStream,
+                                                 comm, platform);
 
   //standard copy to host - exchange - copy back to device
   crystal->gpu_aware=false;

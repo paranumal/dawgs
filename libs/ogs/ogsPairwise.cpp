@@ -48,9 +48,6 @@ inline void ogsPairwise_t::Start(pinnedMemory<T> &buf, const int k,
 
   pinnedMemory<T> sendBuf = h_sendspace;
 
-  T* sendPtr = sendBuf.ptr();
-  T* recvPtr = buf.ptr() + Nhalo*k;
-
   const int NranksSend  = (trans==NoTrans) ? NranksSendN  : NranksSendT;
   const int NranksRecv  = (trans==NoTrans) ? NranksRecvN  : NranksRecvT;
   const int *sendRanks  = (trans==NoTrans) ? sendRanksN.ptr()   : sendRanksT.ptr();
@@ -62,9 +59,11 @@ inline void ogsPairwise_t::Start(pinnedMemory<T> &buf, const int k,
 
   //post recvs
   for (int r=0;r<NranksRecv;r++) {
-    MPI_Irecv(recvPtr+recvOffsets[r]*k,
-              k*recvCounts[r], mpiType<T>::get(), recvRanks[r],
-              recvRanks[r], comm, requests.ptr()+r);
+    comm.Irecv(buf + Nhalo*k + recvOffsets[r]*k,
+               recvRanks[r],
+               k*recvCounts[r],
+               recvRanks[r],
+               requests[r]);
   }
 
   // extract the send buffer
@@ -75,9 +74,11 @@ inline void ogsPairwise_t::Start(pinnedMemory<T> &buf, const int k,
 
   //post sends
   for (int r=0;r<NranksSend;r++) {
-    MPI_Isend(sendPtr+sendOffsets[r]*k,
-              k*sendCounts[r], mpiType<T>::get(), sendRanks[r],
-              rank, comm, requests.ptr()+NranksRecv+r);
+    comm.Isend(sendBuf + sendOffsets[r]*k,
+              sendRanks[r],
+              k*sendCounts[r],
+              rank,
+              requests[NranksRecv+r]);
   }
 }
 
@@ -89,7 +90,7 @@ inline void ogsPairwise_t::Finish(pinnedMemory<T> &buf, const int k,
   const int NranksRecv  = (trans==NoTrans) ? NranksRecvN  : NranksRecvT;
   const int *recvOffsets= (trans==NoTrans) ? recvOffsetsN.ptr() : recvOffsetsT.ptr();
 
-  MPI_Waitall(NranksRecv+NranksSend, requests.ptr(), statuses.ptr());
+  comm.Waitall(NranksRecv+NranksSend, requests);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
@@ -143,9 +144,6 @@ void ogsPairwise_t::Finish(deviceMemory<T> &o_buf,
 
   deviceMemory<T> o_sendBuf = o_sendspace;
 
-  T* sendPtr = o_sendBuf.ptr();
-  T* recvPtr = o_buf.ptr() + Nhalo*k;
-
   const int NranksSend  = (trans==NoTrans) ? NranksSendN  : NranksSendT;
   const int NranksRecv  = (trans==NoTrans) ? NranksRecvN  : NranksRecvT;
   const int *sendRanks  = (trans==NoTrans) ? sendRanksN.ptr()   : sendRanksT.ptr();
@@ -157,18 +155,23 @@ void ogsPairwise_t::Finish(deviceMemory<T> &o_buf,
 
   //post recvs
   for (int r=0;r<NranksRecv;r++) {
-    MPI_Irecv(recvPtr+recvOffsets[r]*k,
-              k*recvCounts[r], mpiType<T>::get(), recvRanks[r],
-              recvRanks[r], comm, requests.ptr()+r);
+    comm.Irecv(o_buf + Nhalo*k + recvOffsets[r]*k,
+              recvRanks[r],
+              k*recvCounts[r],
+              recvRanks[r],
+              requests[r]);
   }
 
   //post sends
   for (int r=0;r<NranksSend;r++) {
-    MPI_Isend(sendPtr+sendOffsets[r]*k,
-              k*sendCounts[r], mpiType<T>::get(), sendRanks[r],
-              rank, comm, requests.ptr()+NranksRecv+r);
+    comm.Isend(o_sendBuf + sendOffsets[r]*k,
+              sendRanks[r],
+              k*sendCounts[r],
+              rank,
+              requests[NranksRecv+r]);
   }
-  MPI_Waitall(NranksRecv+NranksSend, requests.ptr(), statuses.ptr());
+
+  comm.Waitall(NranksRecv+NranksSend, requests);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
@@ -192,7 +195,7 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
                              libp::memory<parallelNode_t> &sharedNodes,
                              ogsOperator_t& gatherHalo,
                              occa::stream _dataStream,
-                             MPI_Comm _comm,
+                             comm_t _comm,
                              platform_t &_platform):
   ogsExchange_t(_platform,_comm,_dataStream) {
 
@@ -225,10 +228,8 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
   }
 
   //shared counts
-  MPI_Alltoall(mpiSendCountsT.ptr(), 1, MPI_INT,
-               mpiRecvCountsT.ptr(), 1, MPI_INT, comm);
-  MPI_Alltoall(mpiSendCountsN.ptr(), 1, MPI_INT,
-               mpiRecvCountsN.ptr(), 1, MPI_INT, comm);
+  comm.Alltoall(mpiSendCountsT, mpiRecvCountsT);
+  comm.Alltoall(mpiSendCountsN, mpiRecvCountsN);
 
   //cumulative sum
   mpiSendOffsetsN[0] = 0;
@@ -267,10 +268,8 @@ ogsPairwise_t::ogsPairwise_t(dlong Nshared,
   libp::memory<parallelNode_t> recvNodes(Nrecv);
 
   //Send list of nodes to each rank
-  MPI_Alltoallv(sharedNodes.ptr(), mpiSendCountsT.ptr(), mpiSendOffsetsT.ptr(), MPI_PARALLELNODE_T,
-                  recvNodes.ptr(), mpiRecvCountsT.ptr(), mpiRecvOffsetsT.ptr(), MPI_PARALLELNODE_T,
-                comm);
-  MPI_Barrier(comm);
+  comm.Alltoallv(sharedNodes, mpiSendCountsT, mpiSendOffsetsT,
+                   recvNodes, mpiRecvCountsT, mpiRecvOffsetsT);
 
   //make ops for gathering halo nodes after an MPI_Allgatherv
   postmpi.platform = platform;

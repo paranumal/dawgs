@@ -54,9 +54,6 @@ inline void ogsAllToAll_t::Start(pinnedMemory<T> &buf, const int k,
   else
     extract(NsendT, k, sendIdsT, buf, sendBuf);
 
-  T* sendPtr = sendBuf.ptr();
-  T* recvPtr = buf.ptr() + Nhalo*k;
-
   if (trans==NoTrans) {
     for (int r=0;r<size;++r) {
       sendCounts[r] = k*mpiSendCountsN[r];
@@ -74,16 +71,16 @@ inline void ogsAllToAll_t::Start(pinnedMemory<T> &buf, const int k,
   }
 
   // collect everything needed with single MPI all to all
-  MPI_Ialltoallv(sendPtr, sendCounts.ptr(), sendOffsets.ptr(), mpiType<T>::get(),
-                 recvPtr, recvCounts.ptr(), recvOffsets.ptr(), mpiType<T>::get(),
-                 comm, &request);
+  comm.Ialltoallv(sendBuf,     sendCounts, sendOffsets,
+                  buf+Nhalo*k, recvCounts, recvOffsets,
+                  request);
 }
 
 template<typename T>
 inline void ogsAllToAll_t::Finish(pinnedMemory<T> &buf, const int k,
                            const Op op, const Transpose trans){
 
-  MPI_Wait(&request, MPI_STATUS_IGNORE);
+  comm.Wait(request);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
@@ -137,9 +134,6 @@ void ogsAllToAll_t::Finish(deviceMemory<T> &o_buf,
 
   deviceMemory<T> o_sendBuf = o_sendspace;
 
-  T* sendPtr = o_sendBuf.ptr();
-  T* recvPtr = o_buf.ptr() + Nhalo*k;
-
   if (trans==NoTrans) {
     for (int r=0;r<size;++r) {
       sendCounts[r] = k*mpiSendCountsN[r];
@@ -157,9 +151,8 @@ void ogsAllToAll_t::Finish(deviceMemory<T> &o_buf,
   }
 
   // collect everything needed with single MPI all to all
-  MPI_Alltoallv(sendPtr, sendCounts.ptr(), sendOffsets.ptr(), mpiType<T>::get(),
-                recvPtr, recvCounts.ptr(), recvOffsets.ptr(), mpiType<T>::get(),
-                comm);
+  comm.Alltoallv(o_sendBuf,     sendCounts, sendOffsets,
+                 o_buf+Nhalo*k, recvCounts, recvOffsets);
 
   //if we recvieved anything via MPI, gather the recv buffer and scatter
   // it back to to original vector
@@ -183,7 +176,7 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
                              libp::memory<parallelNode_t> &sharedNodes,
                              ogsOperator_t& gatherHalo,
                              occa::stream _dataStream,
-                             MPI_Comm _comm,
+                             comm_t _comm,
                              platform_t &_platform):
   ogsExchange_t(_platform,_comm, _dataStream) {
 
@@ -216,10 +209,8 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
   }
 
   //shared counts
-  MPI_Alltoall(mpiSendCountsT.ptr(), 1, MPI_INT,
-               mpiRecvCountsT.ptr(), 1, MPI_INT, comm);
-  MPI_Alltoall(mpiSendCountsN.ptr(), 1, MPI_INT,
-               mpiRecvCountsN.ptr(), 1, MPI_INT, comm);
+  comm.Alltoall(mpiSendCountsT, mpiRecvCountsT);
+  comm.Alltoall(mpiSendCountsN, mpiRecvCountsN);
 
   //cumulative sum
   mpiSendOffsetsN[0] = 0;
@@ -258,10 +249,8 @@ ogsAllToAll_t::ogsAllToAll_t(dlong Nshared,
   libp::memory<parallelNode_t> recvNodes(Nrecv);
 
   //Send list of nodes to each rank
-  MPI_Alltoallv(sharedNodes.ptr(), mpiSendCountsT.ptr(), mpiSendOffsetsT.ptr(), MPI_PARALLELNODE_T,
-                  recvNodes.ptr(), mpiRecvCountsT.ptr(), mpiRecvOffsetsT.ptr(), MPI_PARALLELNODE_T,
-                comm);
-  MPI_Barrier(comm);
+  comm.Alltoallv(sharedNodes, mpiSendCountsT, mpiSendOffsetsT,
+                   recvNodes, mpiRecvCountsT, mpiRecvOffsetsT);
 
   //make ops for gathering halo nodes after an MPI_Allgatherv
   postmpi.platform = platform;

@@ -38,7 +38,7 @@ namespace ogs {
 class ogsExchange_t {
 public:
   platform_t platform;
-  MPI_Comm comm;
+  comm_t comm;
   int rank, size;
 
   dlong Nhalo, NhaloP;
@@ -55,13 +55,13 @@ public:
   bool gpu_aware=false;
 #endif
 
-  ogsExchange_t(platform_t &_platform, MPI_Comm _comm,
+  ogsExchange_t(platform_t &_platform, comm_t _comm,
                 occa::stream _datastream):
     platform(_platform),
     comm(_comm),
     dataStream(_datastream) {
-    MPI_Comm_rank(comm, &rank);
-    MPI_Comm_size(comm, &size);
+    rank = comm.rank();
+    size = comm.size();
   }
   virtual ~ogsExchange_t() {}
 
@@ -112,14 +112,14 @@ private:
   memory<int> sendOffsets;
   memory<int> recvOffsets;
 
-  MPI_Request request;
+  comm_t::request_t request;
 
 public:
   ogsAllToAll_t(dlong Nshared,
                memory<parallelNode_t> &sharedNodes,
                ogsOperator_t &gatherHalo,
                occa::stream _dataStream,
-               MPI_Comm _comm,
+               comm_t _comm,
                platform_t &_platform);
 
   template<typename T>
@@ -192,7 +192,7 @@ private:
   memory<int> sendOffsetsT;
   memory<int> recvOffsetsN;
   memory<int> recvOffsetsT;
-  memory<MPI_Request> requests;
+  memory<comm_t::request_t> requests;
   memory<MPI_Status> statuses;
 
 public:
@@ -200,7 +200,7 @@ public:
                memory<parallelNode_t> &sharedNodes,
                ogsOperator_t &gatherHalo,
                occa::stream _dataStream,
-               MPI_Comm _comm,
+               comm_t _comm,
                platform_t &_platform);
 
   template<typename T>
@@ -269,8 +269,7 @@ private:
   pinnedMemory<char> h_work[2];
   deviceMemory<char> o_work[2];
 
-  MPI_Request request[3];
-  MPI_Status status[3];
+  memory<comm_t::request_t> request;
 
   int Nlevels=0;
   memory<crLevel> levelsN;
@@ -283,7 +282,7 @@ public:
                    memory<parallelNode_t> &sharedNodes,
                    ogsOperator_t &gatherHalo,
                    occa::stream _dataStream,
-                   MPI_Comm _comm,
+                   comm_t _comm,
                    platform_t &_platform);
 
   template<typename T>

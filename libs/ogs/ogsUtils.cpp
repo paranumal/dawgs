@@ -34,36 +34,6 @@ namespace libp {
 
 namespace ogs {
 
-MPI_Datatype MPI_PARALLELNODE_T;
-
-void InitMPIType() {
-  // Make the MPI_PARALLELNODE_T data type
-  parallelNode_t node{};
-  MPI_Datatype dtype[6] = {MPI_DLONG, MPI_HLONG,
-                           MPI_DLONG, MPI_INT,
-                           MPI_INT, MPI_INT};
-  int blength[6] = {1, 1, 1, 1, 1, 1};
-  MPI_Aint addr[6], displ[6];
-  MPI_Get_address ( &(node.localId), addr+0);
-  MPI_Get_address ( &(node.baseId), addr+1);
-  MPI_Get_address ( &(node.newId), addr+2);
-  MPI_Get_address ( &(node.sign), addr+3);
-  MPI_Get_address ( &(node.rank), addr+4);
-  MPI_Get_address ( &(node.destRank), addr+5);
-  displ[0] = 0;
-  displ[1] = addr[1] - addr[0];
-  displ[2] = addr[2] - addr[0];
-  displ[3] = addr[3] - addr[0];
-  displ[4] = addr[4] - addr[0];
-  displ[5] = addr[5] - addr[0];
-  MPI_Type_create_struct (6, blength, displ, dtype, &MPI_PARALLELNODE_T);
-  MPI_Type_commit (&MPI_PARALLELNODE_T);
-}
-
-void DestroyMPIType() {
-  MPI_Type_free(&MPI_PARALLELNODE_T);
-}
-
 occa::stream ogsBase_t::dataStream;
 
 occa::kernel ogsOperator_t::gatherScatterKernel[4][4];

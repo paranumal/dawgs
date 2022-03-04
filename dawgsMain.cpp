@@ -31,25 +31,21 @@ void CorrectnessTest(const int N,
                      memory<dfloat> qcheck,
                      const memory<hlong> ids,
                      const std::string testName,
-                     MPI_Comm comm) {
-
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+                     comm_t comm) {
 
   for (dlong n=0;n<N;n++) {
     if (fabs(qtest[n]-qcheck[n])>1.0e-6) {
-      printf("Rank %d, Entry %d, baseId %lld q = %f, qRef = %f \n", rank, n, ids[n], qtest[n], qcheck[n]);
+      printf("Rank %d, Entry %d, baseId %lld q = %f, qRef = %f \n", comm.rank(), n, ids[n], qtest[n], qcheck[n]);
     }
   }
 
   dfloat err=0.0;
   for (dlong n=0;n<N;n++) err += fabs(qtest[n]-qcheck[n]);
 
-  dfloat errG=0.0;
-  MPI_Reduce(&err, &errG, 1, MPI_DFLOAT, MPI_SUM, 0, comm);
+  comm.Reduce(err, 0);
 
-  if (rank==0) {
-    std::cout << testName << ": Error = " << errG << std::endl;
+  if (comm.rank()==0) {
+    std::cout << testName << ": Error = " << err << std::endl;
   }
 }
 
@@ -121,15 +117,15 @@ void PerformanceTest(int N, int64_t Ndofs, int Nlocal,
 }
 */
 
-void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
+void Test(platform_t & platform, comm_t comm, dawgsSettings_t& settings,
           const dlong nx, const dlong ny, const dlong nz,
           const dlong NX, const dlong NY, const dlong NZ,
           const int N) {
 
   //number of MPI ranks
-  int size = platform.size;
+  int size = platform.size();
   //global MPI rank
-  int rank = platform.rank;
+  int rank = platform.rank();
 
   // find a factorization size = size_x*size_y*size_z such that
   //  size_x>=size_y>=size_z are all 'close' to one another
@@ -188,19 +184,7 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     }
   }
 
-  ogs::ogs_t ogs;
-
-  int verbose = 1;
-  bool unique = false;
-  ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
-            ogs::Auto, unique, verbose, platform);
-
-  // for (int n=0; n<Nelements*Np;++n) {
-  //   std::cout << "rank " << rank << " id[" << n << "] = " << ids[n] << std::endl;
-  // }
-
   int K = 1;
-
   //make an array
   memory<dfloat> q(K*Nelements*Np);
 
@@ -214,43 +198,223 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
   //make a device array o_q, copying q from host on creation
   deviceMemory<dfloat> o_q = platform.malloc<dfloat>(K*Nelements*Np, q);
 
+  if (rank==0) {
+    std::cout << "Ranks = " << size << ", ";
+    std::cout << "Global DOFS = " << Np*NX*NY*NZ << ", ";
+    std::cout << "Max Local DOFS = " << Np*Nelements << ", ";
+    std::cout << "Degree = " << N << std::endl;
+  }
+
 
   // if (settings.compareSetting("CORRECTNESS CHECK", "TRUE")) {
     /*************************
      * Test correctness
      *************************/
 
-    if (rank==0) {
-      std::cout << "Ranks = " << size << ", ";
-      std::cout << "Global DOFS = " << Np*NX*NY*NZ << ", ";
-      std::cout << "Max Local DOFS = " << Np*Nelements << ", ";
-      std::cout << "Degree = " << N << std::endl;
-    }
-
-
-
     //make a host gs handle (calls gslib)
+    int verbose = 0;
     int iunique = 0;
-    void *gsHandle = gsSetup(comm, Nelements*Np, ids.ptr(), iunique, verbose);
+    void *gsHandle = gsSetup(comm.comm(), Nelements*Np, ids.ptr(), iunique, verbose);
+
+    ogs::ogs_t ogs, p_ogs, a_ogs, c_ogs;
+    ogs::ogs_t sogs, p_sogs, a_sogs, c_sogs;
 
     //populate an array with the result we expect
     memory<dfloat> qcheck(K*Nelements*Np);
-    qcheck.copyFrom(q);
+
+    deviceMemory<dfloat> o_gq;
+    memory<dfloat> gq;
 
     //make the golden result
     int transpose = 0;
+    qcheck.copyFrom(q);
     gsGatherScatterVec(qcheck.ptr(), K, gsHandle, transpose);
 
 
-
     memory<dfloat> qtest(K*Nelements*Np);
-    deviceMemory<dfloat> o_gq = platform.malloc<dfloat>(K*ogs.Ngather);
-    memory<dfloat> gq(K*ogs.Ngather);
 
-    //call a gatherScatter operation
-    // ogs.GatherScatter(qtest, ogs::Dfloat, ogs::Trans);
-    // ogs.Gather (gq,     q, ogs::Dfloat, ogs::Trans);
-    // ogs.Scatter(qtest, gq, ogs::Dfloat, ogs::Trans);
+    if (comm.rank()==0)
+      std::cout << "---------- Pairwise ---------" << std::endl;
+
+    bool unique = false;
+    p_ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                ogs::Pairwise, unique, verbose, platform);
+
+    unique = true;
+    p_sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                 ogs::Pairwise, unique, verbose, platform);
+
+    o_gq = platform.malloc<dfloat>(K*p_sogs.Ngather);
+    gq.malloc(K*p_sogs.Ngather);
+
+    o_q.copyFrom(q);
+    p_ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    p_ogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+
+    o_q.copyFrom(q);
+    p_sogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    p_sogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+    o_q.copyFrom(q);
+    p_sogs.Gather (o_gq, o_q, K, ogs::Add, ogs::Trans);
+    p_sogs.Scatter(o_q, o_gq, K, ogs::NoTrans);
+    o_q.copyTo(qtest);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device Gather+Scatter", comm);
+
+    p_sogs.Gather (gq, q, K, ogs::Add, ogs::Trans);
+    p_sogs.Scatter(qtest, gq, K, ogs::NoTrans);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host Gather+Scatter", comm);
+
+    p_ogs.Free();
+    p_sogs.Free();
+    gq.free();
+    o_gq.free();
+
+    if (comm.rank()==0)
+      std::cout << "---------- All-to-all ---------" << std::endl;
+
+    unique = false;
+    a_ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                ogs::AllToAll, unique, verbose, platform);
+
+    unique = true;
+    a_sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                 ogs::AllToAll, unique, verbose, platform);
+
+    o_gq = platform.malloc<dfloat>(K*a_sogs.Ngather);
+    gq.malloc(K*a_sogs.Ngather);
+
+    o_q.copyFrom(q);
+    a_ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    a_ogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+
+    o_q.copyFrom(q);
+    a_sogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    a_sogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+    o_q.copyFrom(q);
+    a_sogs.Gather (o_gq, o_q, K, ogs::Add, ogs::Trans);
+    a_sogs.Scatter(o_q, o_gq, K, ogs::NoTrans);
+    o_q.copyTo(qtest);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device Gather+Scatter", comm);
+
+    a_sogs.Gather (gq, q, K, ogs::Add, ogs::Trans);
+    a_sogs.Scatter(qtest, gq, K, ogs::NoTrans);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host Gather+Scatter", comm);
+
+    a_ogs.Free();
+    a_sogs.Free();
+    gq.free();
+    o_gq.free();
+
+    if (comm.rank()==0)
+      std::cout << "---------- Crystal Router ---------" << std::endl;
+
+    unique = false;
+    c_ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                ogs::CrystalRouter, unique, verbose, platform);
+
+    unique = true;
+    c_sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                 ogs::CrystalRouter, unique, verbose, platform);
+
+    o_gq = platform.malloc<dfloat>(K*c_sogs.Ngather);
+    gq.malloc(K*c_sogs.Ngather);
+
+    o_q.copyFrom(q);
+    c_ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    c_ogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+
+    o_q.copyFrom(q);
+    c_sogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
+    o_q.copyTo(qtest);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device GatherScatter", comm);
+
+    qtest.copyFrom(q);
+    c_sogs.GatherScatter(qtest, K, ogs::Add, ogs::Sym);
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host GatherScatter", comm);
+
+    o_q.copyFrom(q);
+    c_sogs.Gather (o_gq, o_q, K, ogs::Add, ogs::Trans);
+    c_sogs.Scatter(o_q, o_gq, K, ogs::NoTrans);
+    o_q.copyTo(qtest);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Device Gather+Scatter", comm);
+
+    c_sogs.Gather (gq, q, K, ogs::Add, ogs::Trans);
+    c_sogs.Scatter(qtest, gq, K, ogs::NoTrans);
+
+    CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
+                    "Host Gather+Scatter", comm);
+
+    c_ogs.Free();
+    c_sogs.Free();
+    gq.free();
+    o_gq.free();
+
+    if (comm.rank()==0)
+      std::cout << "---------- Auto ---------" << std::endl;
+
+    verbose=true;
+    unique = false;
+    ogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                ogs::Auto, unique, verbose, platform);
+
+    unique = true;
+    sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
+                 ogs::Auto, unique, verbose, platform);
+
+    o_gq = platform.malloc<dfloat>(K*sogs.Ngather);
+    gq.malloc(K*sogs.Ngather);
 
     o_q.copyFrom(q);
     ogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
@@ -263,12 +427,6 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "Host GatherScatter", comm);
 
-
-    ogs::ogs_t sogs;
-
-    unique = true;
-    sogs.Setup(Nelements*Np, ids, comm, ogs::Signed,
-               ogs::Auto, unique, verbose, platform);
 
     o_q.copyFrom(q);
     sogs.GatherScatter(o_q, K, ogs::Add, ogs::Sym);
@@ -295,8 +453,13 @@ void Test(platform_t & platform, MPI_Comm comm, dawgsSettings_t& settings,
     CorrectnessTest(K*Nelements*Np, qtest, qcheck, ids,
                     "Host Gather+Scatter", comm);
 
-    memory<dlong> GlobalToLocal(Nelements*Np);
-    ogs.SetupGlobalToLocalMapping(GlobalToLocal);
+    ogs.Free();
+    sogs.Free();
+    gq.free();
+    o_gq.free();
+
+    // memory<dlong> GlobalToLocal(Nelements*Np);
+    // ogs.SetupGlobalToLocalMapping(GlobalToLocal);
 
 #if 0
   } else {
@@ -372,9 +535,9 @@ int main(int argc, char **argv){
      * Setup
      *************************/
     //number of MPI ranks
-    int size = platform.size;
+    int size = platform.size();
     //global MPI rank
-    int rank = platform.rank;
+    int rank = platform.rank();
 
     // find a factorization size = size_x*size_y*size_z such that
     //  size_x>=size_y>=size_z are all 'close' to one another
@@ -424,7 +587,7 @@ int main(int argc, char **argv){
         nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
       }
 
-      Test(platform, comm.comm(), settings, nx, ny, nz, NX, NY, NZ, N);
+      Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
     } else {
       //sweep through lots of tests
       std::vector<int> NN_low {  2,  2,  2,  2,  2,  2,  2,  2};
@@ -448,7 +611,7 @@ int main(int argc, char **argv){
           settings.changeSetting("BOX NY", std::to_string(NY));
           settings.changeSetting("BOX NZ", std::to_string(NZ));
 
-          Test(platform, comm.comm(), settings, nx, ny, nz, NX, NY, NZ, N);
+          Test(platform, comm, settings, nx, ny, nz, NX, NY, NZ, N);
         }
       }
     }

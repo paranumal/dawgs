@@ -45,7 +45,7 @@ class halo_t;
 class ogsBase_t {
 public:
   platform_t platform;
-  MPI_Comm comm;
+  comm_t comm;
 
   dlong         N=0;
   dlong         Ngather=0;        //  total number of local positive gather nodes
@@ -68,7 +68,7 @@ public:
 
   virtual void Setup(const dlong _N,
                       memory<hlong> ids,
-                      MPI_Comm _comm,
+                      comm_t _comm,
                       const Kind _kind,
                       const Method method,
                       const bool _unique,
@@ -100,7 +100,7 @@ private:
   ogsExchange_t* AutoSetup(dlong Nshared,
                            memory<parallelNode_t> &sharedNodes,
                            ogsOperator_t& gatherHalo,
-                           MPI_Comm _comm,
+                           comm_t _comm,
                            platform_t &_platform,
                            const int verbose);
 };

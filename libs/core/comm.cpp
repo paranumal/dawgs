@@ -43,7 +43,7 @@ comm_t comm_t::world() {
 }
 
 /*MPI_Comm_dup and free*/
-comm_t comm_t::Dup() {
+comm_t comm_t::Dup() const {
   comm_t c;
   /*Make a new comm shared_ptr, which will call MPI_Comm_free when destroyed*/
   c.comm_ptr = std::shared_ptr<MPI_Comm>(new MPI_Comm,
@@ -63,7 +63,7 @@ void comm_t::Free() {
   _size=0;
 }
 /*Split*/
-comm_t comm_t::Split(const int color, const int key) {
+comm_t comm_t::Split(const int color, const int key) const {
   comm_t c;
   /*Make a new comm shared_ptr, which will call MPI_Comm_free when destroyed*/
   c.comm_ptr = std::shared_ptr<MPI_Comm>(new MPI_Comm,
@@ -87,7 +87,7 @@ const int comm_t::size() const {
   return _size;
 }
 
-MPI_Comm comm_t::comm() {
+MPI_Comm comm_t::comm() const {
   if (comm_ptr == nullptr) {
     return MPI_COMM_NULL;
   } else {
@@ -95,15 +95,15 @@ MPI_Comm comm_t::comm() {
   }
 }
 
-void comm_t::Wait(request_t &request) {
+void comm_t::Wait(request_t &request) const {
   MPI_Wait(&request, MPI_STATUS_IGNORE);
 }
 
-void comm_t::Waitall(const int count, memory<request_t> &requests) {
+void comm_t::Waitall(const int count, memory<request_t> &requests) const {
   MPI_Waitall(count, requests.ptr(), MPI_STATUSES_IGNORE);
 }
 
-void comm_t::Barrier() {
+void comm_t::Barrier() const {
   MPI_Barrier(comm());
 }
 

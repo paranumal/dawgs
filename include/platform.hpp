@@ -54,13 +54,12 @@ public:
 
 
 class platform_t {
-public:
-  MPI_Comm comm = MPI_COMM_NULL;
+private:
   std::shared_ptr<internal::iplatform_t> iplatform;
 
+public:
+  comm_t comm;
   occa::device device;
-
-  int rank=0, size=0;
 
   platform_t()=default;
 
@@ -68,12 +67,9 @@ public:
 
     iplatform = std::make_shared<internal::iplatform_t>(settings);
 
-    comm = settings.comm.comm();
+    comm = settings.comm;
 
-    MPI_Comm_rank(comm, &rank);
-    MPI_Comm_size(comm, &size);
-
-    if (rank==0) {
+    if (rank()==0) {
       std::cout << "\n";
       std::cout << "\033[1m";
       std::cout << " _ _ _     ____                                             _ \n";
@@ -96,11 +92,11 @@ public:
   platform_t(const platform_t &other)=default;
   platform_t& operator = (const platform_t &other)=default;
 
-  bool isInitialized() {
+  bool isInitialized() const {
     return (iplatform!=nullptr);
   }
 
-  void assertInitialized() {
+  void assertInitialized() const {
     if(!isInitialized()) {
       LIBP_ABORT("Platform not initialized.");
     }
@@ -164,6 +160,14 @@ public:
   occa::properties& props() {
     assertInitialized();
     return iplatform->props;
+  }
+
+  const int rank() const {
+    return comm.rank();
+  }
+
+  const int size() const {
+    return comm.size();
   }
 
 private:

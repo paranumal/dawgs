@@ -65,28 +65,33 @@ inline void ogsCrystalRouter_t::Finish(pinnedMemory<T> &buf, const int k,
   for (int l=0;l<Nlevels;l++) {
     pinnedMemory<T> recvBuf = h_workspace;
 
-    T* sendPtr = sendBuf.ptr();
-    T* recvPtr = recvBuf.ptr() + levels[l].recvOffset*k;
-
     //post recvs
     if (levels[l].Nmsg>0) {
-      MPI_Irecv(recvPtr, k*levels[l].Nrecv0, mpiType<T>::get(),
-                levels[l].partner, levels[l].partner, comm, request+1);
+      comm.Irecv(recvBuf + levels[l].recvOffset*k,
+                 levels[l].partner,
+                 k*levels[l].Nrecv0,
+                 levels[l].partner,
+                 request[1]);
     }
     if (levels[l].Nmsg==2) {
-      MPI_Irecv(recvPtr+levels[l].Nrecv0*k,
-                k*levels[l].Nrecv1, mpiType<T>::get(),
-                rank-1, rank-1, comm, request+2);
+      comm.Irecv(recvBuf + levels[l].recvOffset*k + levels[l].Nrecv0*k,
+                rank-1,
+                k*levels[l].Nrecv1,
+                rank-1,
+                request[2]);
     }
 
     //assemble send buffer
     extract(levels[l].Nsend, k, levels[l].sendIds, buf, sendBuf);
 
     //post send
-    MPI_Isend(sendPtr, k*levels[l].Nsend, mpiType<T>::get(),
-              levels[l].partner, rank, comm, request+0);
+    comm.Isend(sendBuf,
+               levels[l].partner,
+               k*levels[l].Nsend,
+               rank,
+               request[0]);
 
-    MPI_Waitall(levels[l].Nmsg+1, request, status);
+    comm.Waitall(levels[l].Nmsg+1, request);
 
     //rotate buffers
     h_workspace = h_work[(hbuf_id+1)%2];
@@ -147,18 +152,20 @@ inline void ogsCrystalRouter_t::Finish(deviceMemory<T> &o_buf,
   for (int l=0;l<Nlevels;l++) {
     deviceMemory<T> o_recvBuf = o_workspace;
 
-    T* sendPtr = o_sendBuf.ptr();
-    T* recvPtr = o_recvBuf.ptr() + levels[l].recvOffset*k;
-
     //post recvs
     if (levels[l].Nmsg>0) {
-      MPI_Irecv(recvPtr, k*levels[l].Nrecv0, mpiType<T>::get(),
-                levels[l].partner, levels[l].partner, comm, request+1);
+      comm.Irecv(o_recvBuf + levels[l].recvOffset*k,
+                 levels[l].partner,
+                 k*levels[l].Nrecv0,
+                 levels[l].partner,
+                 request[1]);
     }
     if (levels[l].Nmsg==2) {
-      MPI_Irecv(recvPtr+levels[l].Nrecv0*k,
-                k*levels[l].Nrecv1, mpiType<T>::get(),
-                rank-1, rank-1, comm, request+2);
+      comm.Irecv(o_recvBuf + levels[l].recvOffset*k + levels[l].Nrecv0*k,
+                rank-1,
+                k*levels[l].Nrecv1,
+                rank-1,
+                request[2]);
     }
 
     //assemble send buffer
@@ -170,10 +177,13 @@ inline void ogsCrystalRouter_t::Finish(deviceMemory<T> &o_buf,
     }
 
     //post send
-    MPI_Isend(sendPtr, k*levels[l].Nsend, mpiType<T>::get(),
-              levels[l].partner, rank, comm, request+0);
+    comm.Isend(o_sendBuf,
+               levels[l].partner,
+               k*levels[l].Nsend,
+               rank,
+               request[0]);
 
-    MPI_Waitall(levels[l].Nmsg+1, request, status);
+    comm.Waitall(levels[l].Nmsg+1, request);
 
     //rotate buffers
     o_workspace = o_work[(buf_id+1)%2];
@@ -238,7 +248,7 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
                                        libp::memory<parallelNode_t> &sharedNodes,
                                        ogsOperator_t& gatherHalo,
                                        occa::stream _dataStream,
-                                       MPI_Comm _comm,
+                                       comm_t _comm,
                                        platform_t &_platform):
   ogsExchange_t(_platform,_comm,_dataStream) {
 
@@ -267,6 +277,7 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
   levelsN.malloc(Nlevels);
   levelsT.malloc(Nlevels);
 
+  request.malloc(3);
 
   //Now build the levels
   Nlevels = 0;
@@ -336,15 +347,15 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
 
     int Nsend=(is_lo) ? Nhi : Nlo;
 
-    MPI_Isend(&Nsend, 1, MPI_INT, partner, rank, comm, request+0);
+    comm.Isend(Nsend, partner, rank, request[0]);
 
     int Nrecv0=0, Nrecv1=0;
     if (Nmsg>0)
-      MPI_Irecv(&Nrecv0, 1, MPI_INT, partner, partner, comm, request+1);
+      comm.Irecv(Nrecv0, partner, partner, request[1]);
     if (Nmsg==2)
-      MPI_Irecv(&Nrecv1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+      comm.Irecv(Nrecv1, r_half-1, r_half-1, request[2]);
 
-    MPI_Waitall(Nmsg+1, request, status);
+    comm.Waitall(Nmsg+1, request);
 
     int Nrecv = Nrecv0+Nrecv1;
 
@@ -403,29 +414,29 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
     levelsN[Nlevels].o_sendIds = platform.malloc(levelsN[Nlevels].sendIds);
 
     //share the entry count with our partner
-    MPI_Isend(&NentriesSendT, 1, MPI_INT, partner, rank, comm, request+0);
+    comm.Isend(NentriesSendT, partner, rank, request[0]);
 
     int NentriesRecvT0=0, NentriesRecvT1=0;
     if (Nmsg>0)
-      MPI_Irecv(&NentriesRecvT0, 1, MPI_INT, partner, partner, comm, request+1);
+      comm.Irecv(NentriesRecvT0, partner, partner, request[1]);
     if (Nmsg==2)
-      MPI_Irecv(&NentriesRecvT1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+      comm.Irecv(NentriesRecvT1, r_half-1, r_half-1, request[2]);
 
-    MPI_Waitall(Nmsg+1, request, status);
+    comm.Waitall(Nmsg+1, request);
 
     levelsT[Nlevels].Nrecv0 = NentriesRecvT0;
     levelsT[Nlevels].Nrecv1 = NentriesRecvT1;
     levelsT[Nlevels].recvOffset = NhaloExtT;
 
-    MPI_Isend(&NentriesSendN, 1, MPI_INT, partner, rank, comm, request+0);
+    comm.Isend(NentriesSendN, partner, rank, request[0]);
 
     int NentriesRecvN0=0, NentriesRecvN1=0;
     if (Nmsg>0)
-      MPI_Irecv(&NentriesRecvN0, 1, MPI_INT, partner, partner, comm, request+1);
+      comm.Irecv(NentriesRecvN0, partner, partner, request[1]);
     if (Nmsg==2)
-      MPI_Irecv(&NentriesRecvN1, 1, MPI_INT, r_half-1, r_half-1, comm, request+2);
+      comm.Irecv(NentriesRecvN1, r_half-1, r_half-1, request[2]);
 
-    MPI_Waitall(Nmsg+1, request, status);
+    comm.Waitall(Nmsg+1, request);
 
     levelsN[Nlevels].Nrecv0 = NentriesRecvN0;
     levelsN[Nlevels].Nrecv1 = NentriesRecvN1;
@@ -437,18 +448,15 @@ ogsCrystalRouter_t::ogsCrystalRouter_t(dlong Nshared,
 
 
     //send half the list to our partner
-    MPI_Isend(sendNodes.ptr(), Nsend,
-              MPI_PARALLELNODE_T, partner, rank, comm, request+0);
+    comm.Isend(sendNodes, partner, Nsend, rank, request[0]);
 
     //recv new nodes from our partner(s)
     if (Nmsg>0)
-      MPI_Irecv(nodes.ptr()+offset,        Nrecv0,
-                MPI_PARALLELNODE_T, partner, partner, comm, request+1);
+      comm.Irecv(nodes+offset, partner, Nrecv0, partner, request[1]);
     if (Nmsg==2)
-      MPI_Irecv(nodes.ptr()+offset+Nrecv0, Nrecv1,
-                MPI_PARALLELNODE_T, r_half-1, r_half-1, comm, request+2);
+      comm.Irecv(nodes+offset+Nrecv0, r_half-1, Nrecv1, r_half-1, request[2]);
 
-    MPI_Waitall(Nmsg+1, request, status);
+    comm.Waitall(Nmsg+1, request);
 
     sendNodes.free();
 

@@ -33,11 +33,6 @@ namespace libp {
 
 namespace ogs {
 
-extern MPI_Datatype MPI_PARALLELNODE_T;
-
-void InitMPIType();
-void DestroyMPIType();
-
 struct parallelNode_t{
 
   dlong localId;    // local node id
@@ -49,27 +44,6 @@ struct parallelNode_t{
   int rank; //original rank
   int destRank; //destination rank
 
-};
-
-size_t Sizeof(const Type type);
-MPI_Datatype MPI_Type(const Type type);
-
-template<typename T>
-struct mpiType {
-  static constexpr MPI_Datatype get();
-};
-
-template<> struct mpiType<float> {
-  static constexpr MPI_Datatype get() { return MPI_FLOAT; }
-};
-template<> struct mpiType<double> {
-  static constexpr MPI_Datatype get() { return MPI_DOUBLE; }
-};
-template<> struct mpiType<int> {
-  static constexpr MPI_Datatype get() { return MPI_INT; }
-};
-template<> struct mpiType<long long int> {
-  static constexpr MPI_Datatype get() { return MPI_LONG_LONG_INT; }
 };
 
 template<typename T>

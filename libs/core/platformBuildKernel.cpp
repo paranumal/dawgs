@@ -36,16 +36,16 @@ occa::kernel platform_t::buildKernel(std::string fileName, std::string kernelNam
   occa::kernel kernel;
 
   //build on root first
-  if (!rank)
+  if (!rank())
     kernel = device.buildKernel(fileName, kernelName, kernelInfo);
 
-  MPI_Barrier(comm);
+  comm.Barrier();
 
   //remaining ranks find the cached version (ideally)
-  if (rank)
+  if (rank())
     kernel = device.buildKernel(fileName, kernelName, kernelInfo);
 
-  MPI_Barrier(comm);
+  comm.Barrier();
 
   return kernel;
 }
