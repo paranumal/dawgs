@@ -82,20 +82,20 @@ memory<hlong> MakeIds(dawgsSettings_t &settings) {
   settings.getSetting("LOCAL BOX NY", ny);
   settings.getSetting("LOCAL BOX NZ", nz);
 
-  if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
-    //set global size by multiplying local size by grid dims
+  // if (NX*NY*NZ <= 0) { //if the user hasn't given global sizes
+  //   //set global size by multiplying local size by grid dims
     NX = nx * size_x;
     NY = ny * size_y;
     NZ = nz * size_z;
-    settings.changeSetting("BOX NX", std::to_string(NX));
-    settings.changeSetting("BOX NY", std::to_string(NY));
-    settings.changeSetting("BOX NZ", std::to_string(NZ));
-  } else {
+  //   settings.changeSetting("BOX NX", std::to_string(NX));
+  //   settings.changeSetting("BOX NY", std::to_string(NY));
+  //   settings.changeSetting("BOX NZ", std::to_string(NZ));
+  // } else {
     //WARNING setting global sizes on input overrides any local sizes provided
     nx = NX/size_x + ((rank_x < (NX % size_x)) ? 1 : 0);
     ny = NY/size_y + ((rank_y < (NY % size_y)) ? 1 : 0);
     nz = NZ/size_z + ((rank_z < (NZ % size_z)) ? 1 : 0);
-  }
+  // }
 
   dlong Nelements = nx*ny*nz;
 
@@ -515,6 +515,7 @@ int main(int argc, char **argv){
       settings.changeSetting("BOX NZ", std::to_string(-1));
 
       for (int N=1;N<9;N++) {
+        settings.changeSetting("POLYNOMIAL DEGREE", std::to_string(N));
 
         const int low  = NN_low[N-1];
         const int high = NN_high[N-1];
