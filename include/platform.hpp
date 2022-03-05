@@ -101,8 +101,8 @@ public:
                !isInitialized());
   }
 
-  occa::kernel buildKernel(std::string fileName, std::string kernelName,
-                           properties_t& kernelInfo);
+  kernel_t buildKernel(std::string fileName, std::string kernelName,
+                       properties_t& kernelInfo);
 
   template <typename T>
   deviceMemory<T> malloc(const size_t count,
@@ -171,6 +171,14 @@ public:
 
   const int size() const {
     return comm.size();
+  }
+
+  int getDeviceCount(const std::string mode) {
+    return occa::getDeviceCount(mode);
+  }
+
+  void setCacheDir(const std::string cacheDir) {
+    occa::env::setOccaCacheDir(cacheDir);
   }
 
 private:

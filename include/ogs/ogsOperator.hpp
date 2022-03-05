@@ -124,9 +124,9 @@ private:
 
   //4 types - Float, Double, Int32, Int64
   //4 ops - Add, Mul, Max, Min
-  static occa::kernel gatherScatterKernel[4][4];
-  static occa::kernel gatherKernel[4][4];
-  static occa::kernel scatterKernel[4];
+  static kernel_t gatherScatterKernel[4][4];
+  static kernel_t gatherKernel[4][4];
+  static kernel_t scatterKernel[4];
 
   friend void InitializeKernels(platform_t& platform, const Type type, const Op op);
 };

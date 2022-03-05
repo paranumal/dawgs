@@ -88,7 +88,7 @@ void platform_t::DeviceConfig(){
       device_id = localRank;
 
       //check for over-subscribing devices
-      int deviceCount = occa::getDeviceCount(mode);
+      int deviceCount = getDeviceCount(mode);
       if (deviceCount>0 && localRank>=deviceCount) {
         LIBP_FORCE_WARNING("Rank " << rank() << " oversubscribing device " << device_id%deviceCount << " on node \"" << hostname.ptr() << "\"");
         device_id = device_id%deviceCount;
@@ -153,22 +153,22 @@ void platform_t::DeviceConfig(){
 
   device.setup(mode);
 
-  std::string occaCacheDir;
+  std::string cacheDir;
   char * cacheEnvVar = std::getenv("STREAMPARANUMAL_CACHE_DIR");
   if (cacheEnvVar == nullptr) {
     // Environment variable is not set
-    occaCacheDir = LIBP_DIR "/.occa";
+    cacheDir = LIBP_DIR "/.occa";
   }
   else {
     // Environmet variable is set, but could be empty string
-    occaCacheDir = cacheEnvVar;
+    cacheDir = cacheEnvVar;
 
-    if (occaCacheDir.size() == 0) {
+    if (cacheDir.size() == 0) {
       // Environment variable is set but equal to empty string
-      occaCacheDir = LIBP_DIR "/.occa";
+      cacheDir = LIBP_DIR "/.occa";
     }
   }
-  occa::env::setOccaCacheDir(occaCacheDir);
+  setCacheDir(cacheDir);
 
   comm.Barrier();
 }

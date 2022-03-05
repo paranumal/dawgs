@@ -61,7 +61,7 @@ public:
   bool unique=false;
   bool gather_defined=false;
 
-  static occa::stream dataStream;
+  static stream_t dataStream;
 
   ogsBase_t()=default;
   virtual ~ogsBase_t()=default;

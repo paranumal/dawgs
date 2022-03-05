@@ -113,7 +113,7 @@ class comm_t {
   void Send(mem<T> m,
             const int dest,
             const int count=-1,
-            const int tag=0) {
+            const int tag=0) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(m.length()) : count;
     MPI_Send(m.ptr(), cnt, type, dest, tag, comm());
@@ -125,7 +125,7 @@ class comm_t {
   void Recv(mem<T> m,
             const int source,
             const int count=-1,
-            const int tag=0) {
+            const int tag=0) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(m.length()) : count;
     MPI_Recv(m.ptr(), cnt, type, source, tag, comm());
@@ -136,7 +136,7 @@ class comm_t {
   template <typename T>
   void Send(T& val,
             const int dest,
-            const int tag=0) {
+            const int tag=0) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Send(&val, 1, type, dest, tag, comm());
     mpiType<T>::freeMpiType(type);
@@ -146,7 +146,7 @@ class comm_t {
   template <typename T>
   void Recv(T& val,
             const int source,
-            const int tag=0) {
+            const int tag=0) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Recv(&val, 1, type, source, tag, comm());
     mpiType<T>::freeMpiType(type);
@@ -158,7 +158,7 @@ class comm_t {
              const int dest,
              const int count,
              const int tag,
-             request_t &request) {
+             request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Isend(m.ptr(), count, type, dest, tag, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -170,7 +170,7 @@ class comm_t {
              const int source,
              const int count,
              const int tag,
-             request_t &request) {
+             request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Irecv(m.ptr(), count, type, source, tag, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -181,7 +181,7 @@ class comm_t {
   void Isend(T& val,
              const int dest,
              const int tag,
-             request_t &request) {
+             request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Isend(&val, 1, type, dest, tag, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -192,7 +192,7 @@ class comm_t {
   void Irecv(T& val,
              const int source,
              const int tag,
-             request_t &request) {
+             request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Irecv(&val, 1, type, source, tag, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -202,7 +202,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Bcast(mem<T> m,
              const int root,
-             const int count=-1) {
+             const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(m.length()) : count;
     MPI_Bcast(m.ptr(), cnt, type, root, comm());
@@ -212,7 +212,7 @@ class comm_t {
   /*scalar broadcast*/
   template <typename T>
   void Bcast(T& val,
-             const int root) {
+             const int root) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Bcast(&val, 1, type, root, comm());
     mpiType<T>::freeMpiType(type);
@@ -224,7 +224,7 @@ class comm_t {
                     mem<T> rcv,
               const int root,
               const op_t op = Sum,
-              const int count=-1) {
+              const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(snd.length()) : count;
     MPI_Reduce(snd.ptr(), rcv.ptr(), cnt, type, op, root, comm());
@@ -236,7 +236,7 @@ class comm_t {
   void Reduce(mem<T> m,
               const int root,
               const op_t op = Sum,
-              const int count=-1) {
+              const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(m.length()) : count;
     if (_rank==root) {
@@ -252,7 +252,7 @@ class comm_t {
   void Reduce(const T& snd,
                     T& rcv,
               const int root,
-              const op_t op = Sum) {
+              const op_t op = Sum) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Reduce(&snd, &rcv, 1, type, op, root, comm());
     mpiType<T>::freeMpiType(type);
@@ -260,7 +260,7 @@ class comm_t {
   template <typename T>
   void Reduce(T& val,
               const int root,
-              const op_t op = Sum) {
+              const op_t op = Sum) const {
     T rcv=val;
     Reduce(val, rcv, root, op);
     if (rank()==root) val=rcv;
@@ -271,7 +271,7 @@ class comm_t {
   void Allreduce(const mem<T> snd,
                        mem<T> rcv,
                  const op_t op = Sum,
-                 const int count=-1) {
+                 const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(snd.length()) : count;
     MPI_Allreduce(snd.ptr(), rcv.ptr(), cnt, type, op, comm());
@@ -282,7 +282,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Allreduce(mem<T> m,
                  const op_t op = Sum,
-                 const int count=-1) {
+                 const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(m.length()) : count;
     MPI_Allreduce(MPI_IN_PLACE, m.ptr(), cnt, type, op, comm());
@@ -293,14 +293,14 @@ class comm_t {
   template <typename T>
   void Allreduce(const T& snd,
                        T& rcv,
-                 const op_t op = Sum) {
+                 const op_t op = Sum) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Allreduce(&snd, &rcv, 1, type, op, comm());
     mpiType<T>::freeMpiType(type);
   }
   template <typename T>
   void Allreduce(T& val,
-                 const op_t op = Sum) {
+                 const op_t op = Sum) const {
     T rcv=val;
     Allreduce(val, rcv, op);
     val = rcv;
@@ -312,7 +312,7 @@ class comm_t {
                         mem<T> rcv,
                   const op_t op,
                   const int count,
-                  request_t &request) {
+                  request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Iallreduce(snd.ptr(), rcv.ptr(), count, type, op, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -324,7 +324,7 @@ class comm_t {
                   const int root,
                   const op_t op,
                   const int count,
-                  request_t &request) {
+                  request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Iallreduce(MPI_IN_PLACE, m.ptr(), count, type, op, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -335,7 +335,7 @@ class comm_t {
   void Iallreduce(const T& snd,
                         T& rcv,
                   const op_t op,
-                  request_t &request) {
+                  request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Iallreduce(&snd, &rcv, 1, type, op, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -344,7 +344,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Iallreduce(T& val,
                   const op_t op,
-                  request_t &request) {
+                  request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Iallreduce(MPI_IN_PLACE, &val, 1, type, op, comm(), &request);
     mpiType<T>::freeMpiType(type);
@@ -355,7 +355,7 @@ class comm_t {
   void Scan(const mem<T> snd,
                   mem<T> rcv,
             const op_t op = Sum,
-            const int count=-1) {
+            const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(snd.length()) : count;
     MPI_Scan(snd.ptr(), rcv.ptr(), cnt, type, op, comm());
@@ -366,7 +366,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Scan(mem<T> m,
             const op_t op = Sum,
-            const int count=-1) {
+            const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(m.length()) : count;
     MPI_Scan(MPI_IN_PLACE, m.ptr(), cnt, type, op, comm());
@@ -374,17 +374,17 @@ class comm_t {
   }
 
   /*scalar scan*/
-  template <template<typename> class mem, typename T>
+  template <typename T>
   void Scan(const T& snd,
                   T& rcv,
-            const op_t op = Sum) {
+            const op_t op = Sum) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Scan(&snd, &rcv, 1, type, op, comm());
     mpiType<T>::freeMpiType(type);
   }
   template <typename T>
   void Scan(T& snd,
-            const op_t op = Sum) {
+            const op_t op = Sum) const {
     T rcv=snd;
     Scan(snd, rcv, op);
     snd = rcv;
@@ -395,7 +395,7 @@ class comm_t {
   void Gather(const mem<T> snd,
                     mem<T> rcv,
               const int root,
-              const int sendCount=-1) {
+              const int sendCount=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (sendCount==-1) ? static_cast<int>(snd.length()) : sendCount;
     MPI_Gather(snd.ptr(), cnt, type,
@@ -410,7 +410,7 @@ class comm_t {
                      mem<T> rcv,
                const memory<int> recvCounts,
                const memory<int> recvOffsets,
-               const int root) {
+               const int root) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Gatherv(snd.ptr(), sendcount, type,
                 rcv.ptr(), recvCounts.ptr(), recvOffsets.ptr(), type,
@@ -422,7 +422,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Gather(const T& snd,
                     mem<T> rcv,
-              const int root) {
+              const int root) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Gather(&snd,      1, type,
                rcv.ptr(), 1, type, root, comm());
@@ -434,7 +434,7 @@ class comm_t {
   void Scatter(const mem<T> snd,
                      mem<T> rcv,
                const int root,
-               const int count=-1) {
+               const int count=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (count==-1) ? static_cast<int>(rcv.length()) : count;
     MPI_Scatter(snd.ptr(), cnt, type,
@@ -449,7 +449,7 @@ class comm_t {
                 const memory<int> sendOffsets,
                       mem<T> rcv,
                 const int recvcount,
-                const int root) {
+                const int root) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Scatterv(snd.ptr(), sendCounts.ptr(), sendOffsets.ptr(), type,
                  rcv.ptr(), recvcount, type,
@@ -461,7 +461,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Scatter(T& rcv,
                const mem<T> snd,
-               const int root) {
+               const int root) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Scatter(snd.ptr,   1, type,
                 &rcv,      1, type, root, comm());
@@ -472,7 +472,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Allgather(const mem<T> snd,
                        mem<T> rcv,
-                 const int sendCount=-1) {
+                 const int sendCount=-1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     const int cnt = (sendCount==-1) ? static_cast<int>(snd.length()) : sendCount;
     MPI_Allgather(snd.ptr(), cnt, type,
@@ -481,7 +481,7 @@ class comm_t {
   }
   template <template<typename> class mem, typename T>
   void Allgather(mem<T> m,
-                 const int cnt) {
+                 const int cnt) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Allgather(MPI_IN_PLACE, cnt, type,
                   m.ptr(),      cnt, type, comm());
@@ -494,7 +494,7 @@ class comm_t {
                   const int sendcount,
                         mem<T> rcv,
                   const memory<int> recvCounts,
-                  const memory<int> recvOffsets) {
+                  const memory<int> recvOffsets) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Allgatherv(snd.ptr(), sendcount, type,
                    rcv.ptr(), recvCounts.ptr(), recvOffsets.ptr(), type,
@@ -505,7 +505,7 @@ class comm_t {
   /*scalar allgather*/
   template <template<typename> class mem, typename T>
   void Allgather(const T& snd,
-                       mem<T> rcv) {
+                       mem<T> rcv) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Allgather(&snd,      1, type,
                   rcv.ptr(), 1, type, comm());
@@ -516,7 +516,7 @@ class comm_t {
   template <template<typename> class mem, typename T>
   void Alltoall(const mem<T> snd,
                       mem<T> rcv,
-                const int cnt=1) {
+                const int cnt=1) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Alltoall(snd.ptr(), cnt, type,
                  rcv.ptr(), cnt, type, comm());
@@ -530,7 +530,7 @@ class comm_t {
                  const memory<int> sendOffsets,
                        mem<T> rcv,
                  const memory<int> recvCounts,
-                 const memory<int> recvOffsets) {
+                 const memory<int> recvOffsets) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Alltoallv(snd.ptr(), sendCounts.ptr(), sendOffsets.ptr(), type,
                   rcv.ptr(), recvCounts.ptr(), recvOffsets.ptr(), type,
@@ -545,7 +545,7 @@ class comm_t {
                         mem<T> rcv,
                   const memory<int> recvCounts,
                   const memory<int> recvOffsets,
-                  request_t &request) {
+                  request_t &request) const {
     MPI_Datatype type = mpiType<T>::getMpiType();
     MPI_Ialltoallv(snd.ptr(), sendCounts.ptr(), sendOffsets.ptr(), type,
                   rcv.ptr(), recvCounts.ptr(), recvOffsets.ptr(), type,

@@ -46,8 +46,8 @@ public:
   pinnedMemory<char> h_workspace, h_sendspace;
   deviceMemory<char> o_workspace, o_sendspace;
 
-  occa::stream dataStream;
-  static occa::kernel extractKernel[4];
+  stream_t dataStream;
+  static kernel_t extractKernel[4];
 
 #ifdef GPU_AWARE_MPI
   bool gpu_aware=true;
@@ -56,7 +56,7 @@ public:
 #endif
 
   ogsExchange_t(platform_t &_platform, comm_t _comm,
-                occa::stream _datastream):
+                stream_t _datastream):
     platform(_platform),
     comm(_comm),
     dataStream(_datastream) {
@@ -118,7 +118,7 @@ public:
   ogsAllToAll_t(dlong Nshared,
                memory<parallelNode_t> &sharedNodes,
                ogsOperator_t &gatherHalo,
-               occa::stream _dataStream,
+               stream_t _dataStream,
                comm_t _comm,
                platform_t &_platform);
 
@@ -199,7 +199,7 @@ public:
   ogsPairwise_t(dlong Nshared,
                memory<parallelNode_t> &sharedNodes,
                ogsOperator_t &gatherHalo,
-               occa::stream _dataStream,
+               stream_t _dataStream,
                comm_t _comm,
                platform_t &_platform);
 
@@ -281,7 +281,7 @@ public:
   ogsCrystalRouter_t(dlong Nshared,
                    memory<parallelNode_t> &sharedNodes,
                    ogsOperator_t &gatherHalo,
-                   occa::stream _dataStream,
+                   stream_t _dataStream,
                    comm_t _comm,
                    platform_t &_platform);
 
