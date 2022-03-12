@@ -38,50 +38,176 @@ SOFTWARE.
                           @restrict const dlong *scatterIds,
                           @restrict           T *q) {
 
-  for(dlong k=0;k<K;++k;@outer(1)){
-    for(dlong b=0;b<Nblocks;++b;@outer(0)){
-      @exclusive dlong blockStart, blockEnd, gStart, sStart;
-      @shared T gtemp[p_gatherNodesPerBlock];
-      @shared T stemp[p_gatherNodesPerBlock];
 
-      for(dlong n=0;n<p_blockSize;++n;@inner(0)){
+  if(gatherStarts!=scatterStarts){
+    for(dlong k=0;k<K;++k;@outer(1)){
+      for(dlong b=0;b<Nblocks;++b;@outer(0)){
+	@exclusive dlong blockStart, blockEnd, gStart, sStart;
+	@shared T gtemp[p_gatherNodesPerBlock];
+	@shared T stemp[p_gatherNodesPerBlock];
+	
+	for(dlong n=0;n<p_blockSize;++n;@inner(0)){
+	  blockStart = blockStarts[b];
+	  blockEnd   = blockStarts[b+1];
+	  gStart = gatherStarts[blockStart];
+	  sStart = scatterStarts[blockStart];
+	  
+	  for (dlong id=gStart+n;id<gatherStarts[blockEnd];id+=p_blockSize) {
+	    gtemp[id-gStart] = q[k+gatherIds[id]*K];
+	  }
+	}
+
+	for(dlong n=0;n<p_blockSize;++n;@inner(0)){
+	  for (dlong row=blockStart+n;row<blockEnd;row+=p_blockSize) {
+	    const dlong gRowStart = gatherStarts[row]  -gStart;
+	    const dlong gRowEnd   = gatherStarts[row+1]-gStart;
+	    const dlong sRowStart = scatterStarts[row]  -sStart;
+	    const dlong sRowEnd   = scatterStarts[row+1]-sStart;
+	    T gq = OGS_OP_INIT;
+	    for (dlong i=gRowStart;i<gRowEnd;i++) {
+	      OGS_OP(gq,gtemp[i]);
+	    }
+	    for (dlong i=sRowStart;i<sRowEnd;i++) {
+	      stemp[i] = gq;
+	    }
+	  }
+	}
+	
+	for(dlong n=0;n<p_blockSize;++n;@inner(0)){
+	  for (dlong id=sStart+n;id<scatterStarts[blockEnd];id+=p_blockSize) {
+	    q[k+scatterIds[id]*K] = stemp[id-sStart];
+	  }
+	}
+      }
+    }
+  }
+  
+#if 0
+ for(dlong k=0;k<K;++k;@outer(1)){
+    for(dlong b=0;b<Nblocks;++b;@outer(0)){
+      @exclusive dlong blockStart, blockEnd, gStart, gEnd, sStart, sEnd;
+      @shared T s_gtemp[p_gatherNodesPerBlock];
+      @shared T s_stemp[p_gatherNodesPerBlock];
+
+      for(dlong n=0;n<p_gatherNodesPerBlock;++n;@inner(0)){
         blockStart = blockStarts[b];
         blockEnd   = blockStarts[b+1];
         gStart = gatherStarts[blockStart];
+        gEnd   = gatherStarts[blockEnd];
         sStart = scatterStarts[blockStart];
+        sEnd   = scatterStarts[blockEnd];
 
-        for (dlong id=gStart+n;id<gatherStarts[blockEnd];id+=p_blockSize) {
-          gtemp[id-gStart] = q[k+gatherIds[id]*K];
-        }
+        // load local data and indices
+        if(gStart+n<gEnd){
+          dlong gid = k+K*gatherIds[gStart+n];
+          T qtmp =  q[gid];
+          s_gtemp[n] = qtmp;
+	}
       }
+      
+      @barrier();
 
-      for(dlong n=0;n<p_blockSize;++n;@inner(0)){
-        for (dlong row=blockStart+n;row<blockEnd;row+=p_blockSize) {
-          const dlong gRowStart = gatherStarts[row]  -gStart;
-          const dlong gRowEnd   = gatherStarts[row+1]-gStart;
-          const dlong sRowStart = scatterStarts[row]  -sStart;
-          const dlong sRowEnd   = scatterStarts[row+1]-sStart;
-          T gq = OGS_OP_INIT;
-          for (dlong i=gRowStart;i<gRowEnd;i++) {
-            OGS_OP(gq,gtemp[i]);
-          }
-          for (dlong i=sRowStart;i<sRowEnd;i++) {
-            stemp[i] = gq;
-          }
-        }
+      for(dlong n=0;n<p_gatherNodesPerBlock;++n;@inner(0)){
+	dlong row = blockStart + n;
+
+        if(row<blockEnd){
+	  
+	  const dlong gRowStart = gatherStarts[row]  -gStart;
+	  const dlong gRowEnd   = gatherStarts[row+1]-gStart;
+	  const dlong sRowStart = scatterStarts[row]  -sStart;
+	  const dlong sRowEnd   = scatterStarts[row+1]-sStart;
+	  
+	  T gq = OGS_OP_INIT;
+	  
+	  // gather row from shared
+#pragma nounroll
+	  for (dlong i=gRowStart;i<gRowEnd;i++) {
+	    OGS_OP(gq,s_gtemp[i]);
+	  }
+	  
+	  // scatter row to shared
+#pragma nounroll
+	  for (dlong i=sRowStart;i<sRowEnd;i++) {
+	    s_stemp[i] = gq;
+	  }
+	}
       }
-
-      for(dlong n=0;n<p_blockSize;++n;@inner(0)){
-        for (dlong id=sStart+n;id<scatterStarts[blockEnd];id+=p_blockSize) {
-          q[k+scatterIds[id]*K] = stemp[id-sStart];
+      
+      @barrier();
+      
+      for(dlong n=0;n<p_gatherNodesPerBlock;++n;@inner(0)){
+        if(sStart+n<sEnd){
+	  dlong sid = k+K*scatterIds[sStart+n];
+          q[sid] = s_stemp[n];
         }
       }
     }
   }
+#endif
+
+
+ if(gatherStarts==scatterStarts){
+ // optimized for symmetric GS (i.e. G = S')
+ for(dlong k=0;k<K;++k;@outer(1)){
+    for(dlong b=0;b<Nblocks;++b;@outer(0)){
+      @exclusive dlong blockStart, blockEnd, gStart, gEnd, gid;
+      @shared T s_gtemp[p_gatherNodesPerBlock];
+
+      for(dlong n=0;n<p_gatherNodesPerBlock;++n;@inner(0)){
+        blockStart = blockStarts[b];
+        blockEnd   = blockStarts[b+1];
+        gStart = gatherStarts[blockStart];
+        gEnd   = gatherStarts[blockEnd];
+
+        // load local data and indices
+        if(gStart+n<gEnd){
+          gid = k+K*gatherIds[gStart+n];
+          s_gtemp[n] = q[gid];
+	}
+      }
+      
+      @barrier();
+      
+      for(dlong n=0;n<p_gatherNodesPerBlock;++n;@inner(0)){
+	dlong row = blockStart + n;
+
+        if(row<blockEnd){
+	  
+	  const dlong gRowStart = gatherStarts[row]  -gStart;
+	  const dlong gRowEnd   = gatherStarts[row+1]-gStart;
+	  
+	  T gq = OGS_OP_INIT;
+	  
+	  // gather row from shared
+#pragma nounroll
+	  for (dlong i=gRowStart;i<gRowEnd;i++) {
+	    OGS_OP(gq,s_gtemp[i]);
+	  }
+	  
+	  // scatter row to shared
+#pragma nounroll
+	  for (dlong i=gRowStart;i<gRowEnd;i++) {
+	    s_gtemp[i] = gq;
+	  }
+	}
+      }
+      
+      @barrier();
+      
+      for(dlong n=0;n<p_gatherNodesPerBlock;++n;@inner(0)){
+        if(gStart+n<gEnd){
+          q[gid] = s_gtemp[n];
+        }
+      }
+    }
+  }
+ }
+
+ 
 }
 
 /*------------------------------------------------------------------------------
-  The basic gather kernel
+  The- basic gather kernel
 ------------------------------------------------------------------------------*/
 @kernel void gather(const dlong Nblocks,
                     const int K,
