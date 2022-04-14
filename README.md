@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/468400696.svg)](https://zenodo.org/badge/latestdoi/468400696)
 
 Device AWare Gather Scatter (DAWGS)
 ===================================
