@@ -108,7 +108,7 @@ void unique(const dlong N,
 
   if (v_unique.length() < static_cast<size_t>(Nunique)) v_unique.malloc(Nunique);
 
-  transformGather(N, ids, v, v_unique);
+  transformGather(Nunique, ids, v, v_unique);
 }
 
 template
