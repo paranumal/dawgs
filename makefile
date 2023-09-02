@@ -79,7 +79,7 @@ endif
 GS_DIR=${LIBP_TPL_DIR}/gslib
 
 #libraries
-DAWGS_LIBP_LIBS=ogs core
+DAWGS_LIBP_LIBS=ogs prim core
 
 #includes
 INCLUDES=${LIBP_INCLUDES} \
