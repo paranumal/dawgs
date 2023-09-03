@@ -38,8 +38,6 @@ class ogsOperator_t;
 class ogsFusedOperator_t;
 class ogsExchange_t;
 
-struct parallelNode_t;
-
 class halo_t;
 
 class ogsBase_t {
