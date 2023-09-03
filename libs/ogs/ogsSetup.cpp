@@ -108,11 +108,9 @@ void ogsBase_t::Setup(const dlong _N,
   kind = _kind;
   unique = _unique;
 
-  int rank;
-  rank = comm.rank();
-
   // Seed RNG
-  srand(rank);
+  int rank = comm.rank();
+  prim::seedRNG(rank);
 
   //sanity check options
   LIBP_ABORT("Invalid ogs setup requested",
@@ -363,9 +361,8 @@ void ogsBase_t::FindSharedGroups(const dlong Nids,
   if (unique) {
     //Make a single node from each baseId group the sole positive node
 
-    /*TODO: make a threaded rng*/
     memory<int> rands(NbaseIdGroups);
-    for (dlong n=0;n<NbaseIdGroups;n++) { rands[n] = rand(); }
+    prim::random(NbaseIdGroups, rands);
 
     #pragma omp parallel for
     for (dlong n=0;n<NbaseIdGroups;n++) {

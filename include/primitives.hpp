@@ -51,6 +51,7 @@ namespace prim {
 template<typename T>
 T min(const dlong N, const memory<T> v);
 
+
 /// max: Parallel primitive returning maximum value in input array
 ///
 /// Equivalent to the following code
@@ -67,6 +68,7 @@ T min(const dlong N, const memory<T> v);
 /// // n: 7
 template<typename T>
 T max(const dlong N, const memory<T> v);
+
 
 /// max: Parallel primitive returning maximum value in input array
 ///
@@ -85,6 +87,7 @@ T max(const dlong N, const memory<T> v);
 template<typename T>
 T sum(const dlong N, const memory<T> v);
 
+
 /// abs: Parallel primitive returning absolute value of an input array
 ///
 /// Equivalent to the following code
@@ -101,6 +104,7 @@ T sum(const dlong N, const memory<T> v);
 template<typename T>
 void abs(const dlong N, const memory<T> v, memory<T> absv);
 
+
 /// set: Parallel primitive assigning an input array to a value
 ///
 /// Equivalent to the following code
@@ -116,7 +120,8 @@ void abs(const dlong N, const memory<T> v, memory<T> absv);
 template<typename T>
 void set(const dlong N, const T val, memory<T> v);
 
-/// set: Parallel primitive creating an ordered range in an
+
+/// range: Parallel primitive creating an ordered range in an
 /// output array
 ///
 /// Equivalent to the following code
@@ -131,6 +136,7 @@ void set(const dlong N, const T val, memory<T> v);
 /// // output: [2, 6, 10, 14, 18, 22, 26, 30]
 template<typename T>
 void range(const dlong N, const T start, const T step, memory<T> v);
+
 
 /// count: Parallel primitive for counting occurances of given value in
 /// input array
@@ -150,6 +156,7 @@ void range(const dlong N, const T start, const T step, memory<T> v);
 template<typename T>
 dlong count(const dlong N, const memory<T> v, const T& value);
 
+
 /// exclusiveScan: Parallel primitive for in-place exclusive prefix sum.
 ///
 /// Equivalent to the following code
@@ -167,6 +174,7 @@ dlong count(const dlong N, const memory<T> v, const T& value);
 /// // input: [0, 1, 3, 6, 10, 15, 21, 28]
 template<typename T>
 void exclusiveScan(const dlong N, memory<T> v);
+
 
 /// exclusiveScan: Parallel primitive for exclusive prefix sum.
 ///
@@ -186,6 +194,7 @@ void exclusiveScan(const dlong N, memory<T> v);
 template<typename T>
 void exclusiveScan(const dlong N, const memory<T> v, memory<T> w);
 
+
 /// inclusiveScan: Parallel primitive for in-place inclusive prefix sum.
 ///
 /// Equivalent to the following code
@@ -202,6 +211,7 @@ void exclusiveScan(const dlong N, const memory<T> v, memory<T> w);
 /// // input: [1, 3, 6, 10, 15, 21, 28, 36]
 template<typename T>
 void inclusiveScan(const dlong N, memory<T> v);
+
 
 /// inclusiveScan: Parallel primitive for inclusive prefix sum.
 ///
@@ -221,6 +231,7 @@ void inclusiveScan(const dlong N, memory<T> v);
 template<typename T>
 void inclusiveScan(const dlong N, const memory<T> v, memory<T> w);
 
+
 /// sort: Parallel increasing sort. Sorts an input array based on
 /// the < comparison
 ///
@@ -231,6 +242,7 @@ void inclusiveScan(const dlong N, const memory<T> v, memory<T> w);
 /// // input: [0.08, 0.2, 0.3, 0.4, 0.6, 0.65, 0.7, 1]
 template<typename T>
 void sort(const dlong N, memory<T> v);
+
 
 /// sort: Parallel increasing sort with ids. Sorts an input array based on
 /// the < comparison and returns an array of the original locations
@@ -246,7 +258,8 @@ void sort(const dlong N, memory<T> v);
 template<typename T>
 void sort(const dlong N, memory<T> v, memory<dlong> sortIds);
 
-/// sort: Parallel stable increasing sort. Sorts an input array based on
+
+/// stableSort: Parallel stable increasing sort. Sorts an input array based on
 /// the < comparison, preserving the relative order of equal elements.
 ///
 /// Example
@@ -257,7 +270,8 @@ void sort(const dlong N, memory<T> v, memory<dlong> sortIds);
 template<typename T>
 void stableSort(const dlong N, memory<T> v);
 
-/// sort: Parallel stable increasing sort with ids. Sorts an input array based on
+
+/// stableSort: Parallel stable increasing sort with ids. Sorts an input array based on
 /// the < comparison and returns an array of the original locations
 /// for each entry. Preserves the relative order of equal elements.
 ///
@@ -270,6 +284,7 @@ void stableSort(const dlong N, memory<T> v);
 /// // ids: [5, 4, 1, 3, 0, 2, 7, 6]
 template<typename T>
 void stableSort(const dlong N, memory<T> v, memory<dlong> sortIds);
+
 
 /// transformGather: Parallel primitive for indirectly reading
 /// an input array
@@ -291,6 +306,7 @@ void transformGather(const dlong N,
                      const memory<dlong> ids,
                      const memory<T> v,
                            memory<T> w);
+
 
 /// transformScatter: Parallel primitive for indirectly writing to
 /// an output array. Note that the array of ids to be written
@@ -335,6 +351,7 @@ void transformScatter(const dlong N,
 template<typename T>
 void adjacentDifference(const dlong N, const memory<T> v, memory<T> diff);
 
+
 /// adjacentDifferenceFlag: Parallel primitive for flagging differences across pairs of
 /// consecutive elements. Writes the output to the position of the left item.
 ///
@@ -355,6 +372,7 @@ void adjacentDifference(const dlong N, const memory<T> v, memory<T> diff);
 template<typename T>
 void adjacentDifferenceFlag(const dlong N, const memory<T> v, memory<dlong> flag);
 
+
 /// select: Parallel select primitive. Performs a selection of entries of an input
 /// array based on an input flag. The output array must be large enough to hold all
 /// locations.
@@ -367,6 +385,7 @@ void adjacentDifferenceFlag(const dlong N, const memory<T> v, memory<dlong> flag
 /// // output: [1, 2, 5]
 template<typename T>
 void select(const dlong N, const memory<T> v, const T& val, memory<dlong> ids);
+
 
 /// unique: Parallel unique primitive. From given input range, eliminates
 /// all but the first element from every consecutive group of equivalent elements
@@ -385,6 +404,7 @@ void unique(const dlong N,
                   dlong& Nunique,
                   memory<T>& v_unique);
 
+
 /// runLengthEncode: Parallel run-length encoding. Encodes the size of groups of
 /// consequtive values of the input array.
 ///
@@ -400,6 +420,7 @@ void runLengthEncode(const dlong N,
                      const memory<T> v,
                      dlong& Ngroups,
                      memory<dlong>& offset);
+
 
 /// runLengthEncodeConsecutive: Parallel run-length encoding.
 /// Encodes the size of groups of cconsequtive values of the input array,
@@ -417,6 +438,20 @@ void runLengthEncodeConsecutive(const dlong N,
                                 const memory<T> v,
                                 dlong Ngroups,
                                 memory<dlong> offset);
+
+
+/// random: Parallel random number generation.
+/// Creates an array of randomly generated numbers. The generation is
+/// the same regardless of whether execution was parallel or serial.
+/// For floating-point types, the randomly generated values will be
+/// between 0. and 1., while for integer types the generated values
+/// will be between 0 and the maximum signed value of the type.
+template <typename T>
+void random(const dlong N, memory<T> v);
+
+
+/// seedRNG: Seed the random number generator used in prim::random
+void seedRNG(const uint64_t seed);
 
 }
 
